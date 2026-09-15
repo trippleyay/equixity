@@ -1,0 +1,5 @@
+# Supabase CLI configuration — Equixity Merchant MVP.
+# Intentionally minimal. Migrations are applied against the hosted project with:
+#   supabase db push --project-ref <ref> --password <db-password>
+# (a SUPABASE_ACCESS_TOKEN is required for the Management API call).
+project_id = "equixity-merchant-mvp"
