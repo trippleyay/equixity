@@ -19,15 +19,18 @@ export function RewardsForm({
   assets,
   initialAsset,
   initialBps,
+  initialEnabled,
   sdkSnippet,
 }: {
   assets: AssetOption[];
   initialAsset: string;
   initialBps: number;
+  initialEnabled: boolean;
   sdkSnippet: string;
 }) {
   const [asset, setAsset] = useState(initialAsset);
   const [bps, setBps] = useState(initialBps);
+  const [enabled, setEnabled] = useState(initialEnabled);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
@@ -40,7 +43,11 @@ export function RewardsForm({
       const res = await fetch("/api/merchant/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reward_asset: asset, reward_bps: bps }),
+        body: JSON.stringify({
+          reward_asset: asset,
+          reward_bps: bps,
+          is_enabled: enabled,
+        }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -89,6 +96,31 @@ export function RewardsForm({
           Between 1 and 2000 bps (0.01%–20%). Default 100 bps (1%).
         </span>
       </label>
+
+      <label className="mt-4 flex cursor-pointer items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={() => setEnabled(!enabled)}
+          className={`relative h-6 w-11 rounded-full transition-colors ${
+            enabled ? "bg-green-600" : "bg-gray-300"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              enabled ? "translate-x-5" : ""
+            }`}
+          />
+        </button>
+        <span className="text-sm font-medium text-gray-700">
+          {enabled ? "Rewards enabled" : "Rewards disabled"}
+        </span>
+      </label>
+      <p className="text-xs text-gray-400">
+        Turn rewards off to stop your customers from earning while you paused
+        promotions or stopped using Equixity. Your asset and rate are kept.
+      </p>
 
       <button
         type="button"

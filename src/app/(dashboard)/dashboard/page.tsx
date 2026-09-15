@@ -37,6 +37,11 @@ export default async function OverviewPage() {
           value={formatBps(settings.reward_bps)}
           sub={`capped at 20%`}
         />
+        <Card
+          label="Rewards"
+          value={settings.is_enabled ? "Enabled" : "Disabled"}
+          sub="customer earning"
+        />
       </div>
 
       <section className="mt-6 rounded-lg border border-gray-200 bg-white">

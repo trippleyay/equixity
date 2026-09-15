@@ -16,6 +16,7 @@ import {
 export const settingsSchema = z.object({
   reward_asset: z.enum(SUPPORTED_TICKERS),
   reward_bps: z.number().int().min(REWARD_BPS_MIN).max(REWARD_BPS_MAX),
+  is_enabled: z.boolean(),
 });
 
 export type SettingsInput = z.infer<typeof settingsSchema>;

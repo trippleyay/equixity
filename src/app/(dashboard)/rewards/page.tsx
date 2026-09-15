@@ -18,6 +18,7 @@ export default async function RewardsPage() {
         assets={assets}
         initialAsset={settings.reward_asset}
         initialBps={settings.reward_bps}
+        initialEnabled={settings.is_enabled}
         sdkSnippet={snippet}
       />
     </div>

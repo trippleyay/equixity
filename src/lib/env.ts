@@ -31,4 +31,10 @@ export const env = {
 
   // Server-only. Hex-encoded 32-byte AES-256 key.
   depositKeyEncryptionSecret: process.env.DEPOSIT_KEY_ENCRYPTION_SECRET ?? "",
+
+  // Server-only. Base58-encoded 64-byte Ed25519 secret key for the Equixity
+  // fee-payer wallet. Pays only the SOL transaction fee (and, when a
+  // destination has never held USDC, the one-time ATA rent) on withdrawals —
+  // it must never hold transfer authority over any merchant's USDC.
+  feePayerSecretKey: process.env.FEE_PAYER_SECRET_KEY ?? "",
 };

@@ -28,6 +28,7 @@ export async function listAssets(): Promise<AssetOption[]> {
 export type Settings = {
   reward_asset: string;
   reward_bps: number;
+  is_enabled: boolean;
   display_name: string;
   decimals: number;
 };
@@ -41,7 +42,7 @@ export async function getSettings(merchantId: string): Promise<Settings> {
   const { data, error } = await service
     .from("merchant_settings")
     .select(
-      "reward_asset, reward_bps, asset_config(display_name, decimals, mint_address)",
+      "reward_asset, reward_bps, is_enabled, asset_config(display_name, decimals, mint_address)",
     )
     .eq("merchant_id", merchantId)
     .maybeSingle();
@@ -60,6 +61,7 @@ export async function getSettings(merchantId: string): Promise<Settings> {
   return {
     reward_asset: data.reward_asset,
     reward_bps: data.reward_bps,
+    is_enabled: data.is_enabled,
     display_name: assetConfig.display_name,
     decimals: assetConfig.decimals,
   };
@@ -78,17 +80,18 @@ export function validateSettings(body: unknown):
 export async function updateSettings(
   merchantId: string,
   input: SettingsInput,
-): Promise<{ reward_asset: string; reward_bps: number }> {
+): Promise<{ reward_asset: string; reward_bps: number; is_enabled: boolean }> {
   const service = getServiceClient();
   const { data, error } = await service
     .from("merchant_settings")
     .update({
       reward_asset: input.reward_asset,
       reward_bps: input.reward_bps,
+      is_enabled: input.is_enabled,
       updated_at: new Date().toISOString(),
     })
     .eq("merchant_id", merchantId)
-    .select("reward_asset, reward_bps")
+    .select("reward_asset, reward_bps, is_enabled")
     .single();
   if (error) {
     // The DB CHECK constraint is the gate that actually matters; surface it.
@@ -118,6 +121,33 @@ export async function getDepositAddress(merchantId: string): Promise<string> {
     .maybeSingle();
   if (error || !data) throw new Error("No deposit account for this merchant.");
   return data.deposit_address;
+}
+
+export type DepositAccountSigningMaterial = {
+  deposit_address: string;
+  encrypted_private_key: string;
+};
+
+/**
+ * SERVER-ONLY. Fetches the merchant's encrypted deposit private key so the
+ * withdrawal path can reconstruct the signing keypair. This material is NEVER
+ * returned by any API route — the only caller is the server-side withdrawal
+ * executor, which decrypts in memory for the duration of one signing call.
+ */
+export async function getDepositAccountForSigning(
+  merchantId: string,
+): Promise<DepositAccountSigningMaterial> {
+  const service = getServiceClient();
+  const { data, error } = await service
+    .from("merchant_deposit_accounts")
+    .select("deposit_address, encrypted_private_key")
+    .eq("merchant_id", merchantId)
+    .maybeSingle();
+  if (error || !data) throw new Error("No deposit account for this merchant.");
+  return {
+    deposit_address: data.deposit_address,
+    encrypted_private_key: data.encrypted_private_key,
+  };
 }
 
 export type RewardEventRow = {

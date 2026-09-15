@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:deposit-key-roundtrip": "tsx scripts/verify-deposit-key-roundtrip.ts"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",

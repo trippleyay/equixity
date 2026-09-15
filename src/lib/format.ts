@@ -1,4 +1,4 @@
-import { USDC_DECIMALS } from "@/lib/solana/constants";
+import { USDC_BASE_UNITS_PER_TOKEN, USDC_DECIMALS } from "@/lib/solana/constants";
 
 /**
  * Formatting helpers for money. Every stored/transported amount is a bigint in
@@ -39,6 +39,28 @@ export function formatBaseUnitsWithDecimals(
   const frac = (abs % scale).toString().padStart(decimals, "0");
   const trimmed = frac.replace(/0+$/, "");
   return trimmed.length > 0 ? `${sign}${whole}.${trimmed}` : `${sign}${whole}`;
+}
+
+/**
+ * Parse a human decimal USDC amount ("12.34") into base-unit bigint — integer
+ * math only, no floats. Rejects non-numeric input, empty values, and more than
+ * 6 decimals (silent rounding is not allowed). 0 and negative throw.
+ */
+export function parseUsdcToUnits(input: string | number): bigint {
+  const s = String(input).trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) {
+    throw new Error("Invalid USDC amount.");
+  }
+  const [whole, frac = ""] = s.split(".");
+  if (frac.length > USDC_DECIMALS) {
+    throw new Error("Too many decimal places (max 6 for USDC).");
+  }
+  const fracPadded = frac.padEnd(USDC_DECIMALS, "0");
+  const units = BigInt(whole) * USDC_BASE_UNITS_PER_TOKEN + BigInt(fracPadded);
+  if (units <= 0n) {
+    throw new Error("Amount must be greater than zero.");
+  }
+  return units;
 }
 
 /**
