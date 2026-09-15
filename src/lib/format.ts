@@ -65,11 +65,14 @@ export function parseUsdcToUnits(input: string | number): bigint {
 
 /**
  * Reward rate as a percent string, integer math only. 100 bps -> "1%",
- * 150 bps -> "1.5%", 25 bps -> "0.25%".
+ * 150 bps -> "1.5%", 125 bps -> "1.25%", 5 bps -> "0.05%".
  */
 export function formatBps(bps: number): string {
-  const w = bps / 100;
-  const f = bps % 100;
-  const frac = f.toString().padStart(2, "0").replace(/0+$/, "");
-  return frac.length > 0 ? `${w}.${frac}%` : `${w}%`;
+  const whole = Math.floor(bps / 100);
+  const frac = bps % 100;
+  if (frac === 0) {
+    return `${whole}%`;
+  }
+  const fracStr = frac.toString().padStart(2, "0").replace(/0+$/, "");
+  return `${whole}.${fracStr}%`;
 }

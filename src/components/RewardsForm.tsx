@@ -11,10 +11,41 @@ type AssetOption = {
 
 /**
  * Rewards configuration form (spec section 7). Saves via POST
- * /api/merchant/settings. The 0.01%–20% (1–2000 bps) bound is enforced here for
- * UX and again via Zod + the DB CHECK constraint (the DB is the gate that
- * actually matters).
+ * /api/merchant/settings. The 0.01%–20% bound is enforced here for UX and again
+ * via Zod + the DB CHECK constraint (the DB is the gate that actually matters).
+ * The rate is stored as basis points (1–2000) internally, but the UI only ever
+ * presents it as a percentage and converts on save.
  */
+
+/** 100 bps -> "1", 150 bps -> "1.5", 25 bps -> "0.25". */
+function bpsToPercentString(bps: number): string {
+  const whole = Math.floor(bps / 100);
+  const fracHundredths = bps % 100;
+  if (fracHundredths === 0) {
+    return String(whole);
+  }
+  return `${whole}.${String(fracHundredths).padStart(2, "0").replace(/0+$/, "")}`;
+}
+
+/**
+ * Parse a percentage string ("1", "1.5", "0.25") into integer basis points
+ * (1–2000). Integer math only — at most 2 decimal places because bps are whole
+ * hundredths of a percent. Throws with a user-facing message on invalid input.
+ */
+function percentToBps(input: string): number {
+  const s = input.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) {
+    throw new Error("Enter a percentage between 0.01% and 20%.");
+  }
+  const [whole, frac = ""] = s.split(".");
+  const hundredths = parseInt(frac.padEnd(2, "0"), 10);
+  const bps = parseInt(whole, 10) * 100 + hundredths;
+  if (bps < 1 || bps > 2000) {
+    throw new Error("Percentage must be between 0.01% and 20%.");
+  }
+  return bps;
+}
+
 export function RewardsForm({
   assets,
   initialAsset,
@@ -29,7 +60,7 @@ export function RewardsForm({
   sdkSnippet: string;
 }) {
   const [asset, setAsset] = useState(initialAsset);
-  const [bps, setBps] = useState(initialBps);
+  const [percent, setPercent] = useState(bpsToPercentString(initialBps));
   const [enabled, setEnabled] = useState(initialEnabled);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(
     null,
@@ -37,6 +68,13 @@ export function RewardsForm({
   const [busy, setBusy] = useState(false);
 
   async function save() {
+    let bps;
+    try {
+      bps = percentToBps(percent);
+    } catch (e) {
+      setStatus({ kind: "error", text: (e as Error).message });
+      return;
+    }
     setBusy(true);
     setStatus(null);
     try {
@@ -82,18 +120,19 @@ export function RewardsForm({
       </label>
 
       <label className="mt-4 block text-sm font-medium text-gray-700">
-        Reward percentage (basis points)
+        Reward percentage
         <input
           type="number"
-          min={1}
-          max={2000}
+          min={0.01}
+          max={20}
+          step={0.01}
           required
-          value={bps}
-          onChange={(e) => setBps(parseInt(e.target.value, 10))}
+          value={percent}
+          onChange={(e) => setPercent(e.target.value)}
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
         />
         <span className="text-xs text-gray-400">
-          Between 1 and 2000 bps (0.01%–20%). Default 100 bps (1%).
+          Between 0.01% and 20%. Default 1%.
         </span>
       </label>
 
