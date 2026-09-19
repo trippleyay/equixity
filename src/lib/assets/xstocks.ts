@@ -22,6 +22,11 @@
 const BASE = "https://api.xstocks.fi/api/v2/public/assets";
 const PAGE_SIZE = 100;
 const MAX_PAGES = 40; // 928 assets / 100 = 10 pages today; generous headroom.
+/** Per-request ceilings so a slow upstream can never blow the function cap. */
+const PAGE_TIMEOUT_MS = 10_000;
+const PRICE_TIMEOUT_MS = 6_000;
+/** Catalog pages are independent — fetched in chunks, not one-by-one. */
+const PAGE_CHUNK = 5;
 
 export type XstockAsset = {
   /** Stored ticker — the API's own `symbol`, e.g. 'AAPLx'. */
@@ -47,46 +52,70 @@ function solanaMint(node: XstockNode): string | null {
   return sol?.address ?? null;
 }
 
+async function fetchPage(page: number): Promise<{
+  nodes: XstockNode[];
+  hasNextPage: boolean;
+}> {
+  const res = await fetch(`${BASE}?pageSize=${PAGE_SIZE}&page=${page}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(`xStocks catalog page ${page} failed: HTTP ${res.status}`);
+  }
+  const json = (await res.json()) as {
+    nodes?: XstockNode[];
+    page?: { hasNextPage?: boolean };
+  };
+  const nodes = json.nodes ?? [];
+
+  // Trap 1: an empty page means the request shape was rejected — NOT that
+  // there are no assets. Refuse to treat it as an empty catalog.
+  if (nodes.length === 0) {
+    throw new Error(
+      `xStocks catalog page ${page} returned 0 nodes (unexpected; refusing to treat as an empty catalog).`,
+    );
+  }
+  return { nodes, hasNextPage: json.page?.hasNextPage === true };
+}
+
+function toAssets(nodes: XstockNode[], out: XstockAsset[]): void {
+  for (const node of nodes) {
+    const ticker = node.symbol?.trim();
+    const underlying = node.underlyingSymbol?.trim();
+    const mint = solanaMint(node);
+    // Skip anything without the fields the catalog requires.
+    if (!ticker || !underlying || !mint) continue;
+    out.push({
+      ticker,
+      underlying,
+      displayName: node.name?.trim() || ticker,
+      logoUrl: node.logo?.trim() || "",
+      mintAddress: mint,
+    });
+  }
+}
+
 export async function fetchXstockCatalog(): Promise<XstockAsset[]> {
   const out: XstockAsset[] = [];
 
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await fetch(`${BASE}?pageSize=${PAGE_SIZE}&page=${page}`, {
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error(`xStocks catalog page ${page} failed: HTTP ${res.status}`);
+  // Chunked parallel pagination: pages are independent GETs by offset, so we
+  // fetch PAGE_CHUNK at a time and stop once the highest fetched page reports
+  // no next page. A sequential loop costs ~10 x 3s against this API (~30s of
+  // the function's 60s budget); chunking costs ~ceil(pages/chunk) x 3s.
+  let firstUnfetched = 0;
+  while (firstUnfetched < MAX_PAGES) {
+    const chunkIndexes: number[] = [];
+    for (let i = 0; i < PAGE_CHUNK && firstUnfetched + i < MAX_PAGES; i++) {
+      chunkIndexes.push(firstUnfetched + i);
     }
-    const json = (await res.json()) as {
-      nodes?: XstockNode[];
-      page?: { hasNextPage?: boolean };
-    };
-    const nodes = json.nodes ?? [];
+    const pages = await Promise.all(chunkIndexes.map((p) => fetchPage(p)));
+    firstUnfetched += chunkIndexes.length;
 
-    // Trap 1: an empty page with hasNextPage=true, or an empty first page,
-    // means the request shape was rejected — NOT that there are no assets.
-    if (nodes.length === 0) {
-      throw new Error(
-        `xStocks catalog page ${page} returned 0 nodes (unexpected; refusing to treat as an empty catalog).`,
-      );
-    }
+    for (const page of pages) toAssets(page.nodes, out);
 
-    for (const node of nodes) {
-      const ticker = node.symbol?.trim();
-      const underlying = node.underlyingSymbol?.trim();
-      const mint = solanaMint(node);
-      // Skip anything without the fields the catalog requires.
-      if (!ticker || !underlying || !mint) continue;
-      out.push({
-        ticker,
-        underlying,
-        displayName: node.name?.trim() || ticker,
-        logoUrl: node.logo?.trim() || "",
-        mintAddress: mint,
-      });
-    }
-
-    if (!json.page?.hasNextPage) break;
+    // Stop when the HIGHEST fetched page says the catalog is exhausted.
+    if (!pages[pages.length - 1].hasNextPage) break;
   }
 
   return out;
@@ -100,7 +129,14 @@ export async function fetchXstockCatalog(): Promise<XstockAsset[]> {
 export async function fetchXstockPrice(symbol: string): Promise<string | null> {
   const res = await fetch(
     `${BASE}/${encodeURIComponent(symbol)}/price-data`,
-    { cache: "no-store" },
+    {
+      cache: "no-store",
+      // This endpoint has been observed at ~21s per call when the upstream is
+      // degraded. A hard 6s ceiling keeps the whole price phase inside the
+      // function budget; a timed-out price just keeps the previous value and
+      // is retried on the next sync tick.
+      signal: AbortSignal.timeout(PRICE_TIMEOUT_MS),
+    },
   );
   if (!res.ok) return null;
   const json = (await res.json()) as { quote?: number | string };

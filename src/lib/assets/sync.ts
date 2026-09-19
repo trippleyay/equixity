@@ -27,8 +27,8 @@ import { fetchMintDecimals } from "@/lib/assets/decimals";
 
 const CURATED = new Set(CURATED_XSTOCK_TICKERS);
 
-/** Bounded concurrency for the ~50 per-asset price calls. */
-const PRICE_CONCURRENCY = 5;
+/** Bounded concurrency for the ~42 per-asset price calls. */
+const PRICE_CONCURRENCY = 8;
 
 export type CatalogSyncResult = {
   discovered: number;
@@ -130,20 +130,30 @@ export async function syncRewardAssets(): Promise<CatalogSyncResult> {
   }
 
   const upsertRows: UpsertRow[] = [];
-  for (const row of [...xRows, ...pRows]) {
-    let decimals = decimalsByMint.get(row.mint_address);
-    if (decimals === undefined) {
-      try {
-        decimals = await fetchMintDecimals(row.mint_address, connection);
-        decimalsByMint.set(row.mint_address, decimals);
-        result.decimalsFetched++;
-      } catch (e) {
-        result.rowErrors.push(
-          `${row.ticker}: could not read mint decimals (${String(e)})`,
-        );
-        continue;
-      }
+  // Decimals lookups run with bounded concurrency: a COLD run (first-ever
+  // sync) needs this RPC for every discovered mint (~936 today), and even at
+  // ~150ms per call a sequential loop blows Vercel's 60s function cap. Warm
+  // runs hit this same path for 0 mints (all cached), so this only costs on
+  // genuinely new listings.
+  const needingDecimals = [...xRows, ...pRows].filter(
+    (row) => !decimalsByMint.has(row.mint_address),
+  );
+  await mapWithConcurrency(needingDecimals, 10, async (row) => {
+    try {
+      const decimals = await fetchMintDecimals(row.mint_address, connection);
+      decimalsByMint.set(row.mint_address, decimals);
+      result.decimalsFetched++;
+    } catch (e) {
+      result.rowErrors.push(
+        `${row.ticker}: could not read mint decimals (${String(e)})`,
+      );
     }
+  });
+  for (const row of [...xRows, ...pRows]) {
+    const decimals = decimalsByMint.get(row.mint_address);
+    // No decimals -> no row. Without them no unit conversion in the app can
+    // ever be correct for this asset, so skipping is the only safe move.
+    if (decimals === undefined) continue;
     upsertRows.push({ ...row, decimals });
   }
 

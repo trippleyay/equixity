@@ -42,7 +42,10 @@ function toPriceString(value: number | string | undefined): string | null {
 }
 
 export async function fetchPrestockCatalog(): Promise<PrestockAsset[]> {
-  const res = await fetch(ENDPOINT, { cache: "no-store" });
+  const res = await fetch(ENDPOINT, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
   if (!res.ok) {
     throw new Error(`PreStocks catalog failed: HTTP ${res.status}`);
   }
