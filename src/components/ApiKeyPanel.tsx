@@ -118,7 +118,7 @@ export function ApiKeyPanel({
   }
 
   return (
-    <div className="mt-6 max-w-xl rounded-lg border border-gray-200 bg-white p-5">
+    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
       <h2 className="text-sm font-semibold text-gray-700">Fiat checkout API</h2>
       <p className="mt-1 text-xs text-gray-500">
         For merchants on Stripe, Shopify, or any card checkout: your backend calls

@@ -13,7 +13,7 @@ const NAV_ITEMS = [
 export function Sidebar({ merchantName }: { merchantName: string }) {
   const pathname = usePathname();
   return (
-    <aside className="w-60 shrink-0 border-r border-gray-200 bg-white">
+    <aside className="sticky top-0 h-screen w-60 shrink-0 overflow-y-auto border-r border-gray-200 bg-white">
       <div className="px-4 py-5">
         <div className="text-lg font-bold tracking-tight text-gray-900">
           Equixity

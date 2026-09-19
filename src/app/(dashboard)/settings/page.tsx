@@ -38,7 +38,7 @@ export default async function SettingsPage() {
       </p>
 
       {/* --- Account ------------------------------------------------------ */}
-      <section className="mt-6 max-w-xl rounded-lg border border-gray-200 bg-white p-5">
+      <section className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-gray-700">Account</h2>
         <dl className="mt-4 space-y-4 text-sm">
           <Row label="Business name" value={merchant.name} />
@@ -71,6 +71,7 @@ export default async function SettingsPage() {
         crypto payments.
       </p>
 
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
       <ApiKeyPanel
         initialHasKey={apiKey.has_key}
         initialLastFour={apiKey.last_four}
@@ -78,7 +79,7 @@ export default async function SettingsPage() {
         baseUrl={appBase}
       />
 
-      <div className="mt-6 max-w-xl rounded-lg border border-gray-200 bg-white p-5">
+      <div className="rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-gray-700">Crypto checkout (Solana)</h2>
         <p className="mt-1 text-xs text-gray-500">
           Paste this into your checkout. It carries only your merchant ID.
@@ -98,6 +99,7 @@ export default async function SettingsPage() {
         currentEnabled={settings.is_enabled}
         currentEligibilityConfirmed={settings.confirmed_customer_eligibility}
       />
+      </div>
     </div>
   );
 }

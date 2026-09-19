@@ -179,24 +179,10 @@ export async function updateSettings(
           "Australia, or any OFAC-sanctioned jurisdiction.",
       );
     }
-    // Spec sections 1 + 6a: rewards that pay into nothing cannot be verified.
-    // The receiving wallet is required BEFORE the toggle can stick on — the UI
-    // mirrors this, but the server is the gate that matters.
-    const { data: current } = await service
-      .from("merchant_settings")
-      .select("receiving_wallet_address")
-      .eq("merchant_id", merchantId)
-      .maybeSingle();
-    const effectiveWallet =
-      patch.receiving_wallet_address !== undefined
-        ? (patch.receiving_wallet_address as string | null)
-        : (current?.receiving_wallet_address ?? null);
-    if (!effectiveWallet) {
-      throw new SettingsValidationError(
-        "Add your receiving wallet (Settings → Configuration) before enabling " +
-          "rewards — purchases are verified against it.",
-      );
-    }
+    // NOTE: the receiving wallet is deliberately NOT required here. Fiat-only
+    // merchants never need one — the gate that matters is per-verification: a
+    // Solana completion call without a wallet on record fails at verify time,
+    // not at toggle time.
   }
 
   const { data, error } = await service

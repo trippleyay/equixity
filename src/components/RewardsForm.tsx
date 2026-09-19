@@ -195,7 +195,7 @@ export function RewardsForm({
       <p className="text-xs text-gray-400">
         {eligibilityConfirmed
           ? "Turn rewards off to stop your customers from earning while you pause promotions or stop using Equixity. Your asset and rate are kept."
-          : "Tick the eligibility statement above AND set your receiving wallet (Settings → Configuration) to enable rewards."}
+          : "Tick the eligibility statement above to enable rewards."}
       </p>
 
       <button

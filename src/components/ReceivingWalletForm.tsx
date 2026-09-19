@@ -78,7 +78,7 @@ export function ReceivingWalletForm({
   }
 
   return (
-    <div className="mt-6 max-w-xl rounded-lg border border-gray-200 bg-white p-5">
+    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
       <h2 className="text-sm font-semibold text-gray-700">Receiving wallet</h2>
       <p className="mt-1 text-xs text-gray-500">
         The Solana wallet your checkout pays into.
@@ -103,7 +103,8 @@ export function ReceivingWalletForm({
         className="mt-3 block w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
       />
       <p className="mt-1 text-xs text-gray-400">
-        Required before rewards can be enabled or verified. Editable at any time
+        Required for Solana checkout verification (fiat merchants do not need
+        one). Editable at any time
         — changes apply to future purchases only.
       </p>
       <button

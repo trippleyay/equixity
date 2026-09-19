@@ -12,7 +12,7 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar merchantName={merchant.name} />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8 lg:px-10">
+      <main className="w-full max-w-7xl flex-1 px-6 py-8 lg:px-10">
         {children}
       </main>
     </div>
