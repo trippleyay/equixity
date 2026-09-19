@@ -1,5 +1,5 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
-import { getSettings, getSdkSnippet, listAssets } from "@/lib/services/merchant";
+import { getSettings, listAssets } from "@/lib/services/merchant";
 import { RewardsForm } from "@/components/RewardsForm";
 import { getRecentClaimAssets } from "@/lib/services/claim-assets";
 
@@ -20,7 +20,6 @@ export default async function RewardsPage() {
           logo_url: a.logo_url,
           token_price_usd: a.token_price_usd,
         }));
-  const snippet = getSdkSnippet(merchant.public_id);
 
   return (
     <div>
@@ -33,9 +32,7 @@ export default async function RewardsPage() {
         initialAsset={settings.reward_asset}
         initialBps={settings.reward_bps}
         initialEnabled={settings.is_enabled}
-        initialReceivingWallet={settings.receiving_wallet_address}
         initialEligibilityConfirmed={settings.confirmed_customer_eligibility}
-        sdkSnippet={snippet}
       />
     </div>
   );

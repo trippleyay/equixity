@@ -40,6 +40,7 @@ export async function generateApiKey(merchantId: string): Promise<GeneratedApiKe
     .update({
       api_key_hash: hashApiKey(apiKey),
       api_key_last_four: lastFour,
+      api_key_created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", merchantId);
@@ -48,20 +49,44 @@ export async function generateApiKey(merchantId: string): Promise<GeneratedApiKe
   return { apiKey, lastFour };
 }
 
-/** Dashboard display state: whether a key exists, and only its last four. */
+/** Dashboard display state: hash presence, last four, and when it was created. */
 export async function getApiKeyStatus(
   merchantId: string,
-): Promise<{ has_key: boolean; last_four: string | null }> {
+): Promise<{
+  has_key: boolean;
+  last_four: string | null;
+  created_at: string | null;
+}> {
   const service = getServiceClient();
   const { data } = await service
     .from("merchants")
-    .select("api_key_hash, api_key_last_four")
+    .select("api_key_hash, api_key_last_four, api_key_created_at")
     .eq("id", merchantId)
     .maybeSingle();
   return {
     has_key: Boolean(data?.api_key_hash),
     last_four: data?.api_key_last_four ?? null,
+    created_at: data?.api_key_created_at ?? null,
   };
+}
+
+/**
+ * Delete the merchant's API key. One key max per merchant in this build, so a
+ * delete is simply clearing the two columns — the key stops authenticating the
+ * moment the update commits (resolveMerchantByApiKey matches on the hash).
+ */
+export async function deleteApiKey(merchantId: string): Promise<void> {
+  const service = getServiceClient();
+  const { error } = await service
+    .from("merchants")
+    .update({
+      api_key_hash: null,
+      api_key_last_four: null,
+      api_key_created_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", merchantId);
+  if (error) throw new Error(`Could not delete API key: ${error.message}`);
 }
 
 /**

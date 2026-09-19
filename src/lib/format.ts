@@ -64,6 +64,20 @@ export function parseUsdcToUnits(input: string | number): bigint {
 }
 
 /**
+ * Upstream issuer names carry a vendor suffix ("Apple Inc. xStock",
+ * "Anduril Industries PreStock"). The symbol column (AAPLx / ANDURIL) already
+ * says which kind it is, so the display name is shown without the suffix.
+ * Shared by the catalog sync writer (server) and the asset table (client).
+ */
+export function cleanDisplayName(raw: string, ticker: string): string {
+  const stripped = raw
+    .replace(/\s+xStock$/i, "")
+    .replace(/\s+PreStock$/i, "")
+    .trim();
+  return stripped || ticker;
+}
+
+/**
  * Reward rate as a percent string, integer math only. 100 bps -> "1%",
  * 150 bps -> "1.5%", 125 bps -> "1.25%", 5 bps -> "0.05%".
  */

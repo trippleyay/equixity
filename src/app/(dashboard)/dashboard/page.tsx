@@ -22,7 +22,7 @@ export default async function OverviewPage() {
     <div>
       <h1 className="text-2xl font-semibold text-gray-900">Overview</h1>
       <p className="mt-1 text-sm text-gray-500">
-        Welcome back, {merchant.name}.
+        Welcome, {merchant.name}.
       </p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -58,28 +58,9 @@ export default async function OverviewPage() {
         />
       </div>
 
-      {/* Setup blockers, stated plainly rather than leaving rewards mysteriously
-          off. Both are enforced server-side too (spec sections 1 and 6a). */}
-      {!settings.receiving_wallet_address ||
-      !settings.confirmed_customer_eligibility ? (
-        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-medium">Finish setting up before rewards can run:</p>
-          <ul className="mt-2 list-inside list-disc space-y-1">
-            {!settings.receiving_wallet_address ? (
-              <li>
-                Add your <strong>receiving wallet</strong> on the Rewards page — the
-                Solana wallet your checkout actually pays into.
-              </li>
-            ) : null}
-            {!settings.confirmed_customer_eligibility ? (
-              <li>
-                Confirm the <strong>eligibility statement</strong> on the Rewards page
-                before enabling rewards.
-              </li>
-            ) : null}
-          </ul>
-        </div>
-      ) : null}
+      {/* Setup state is shown in the cards above (receiving wallet / eligibility);
+          no separate warning banner — the Rewards toggle itself refuses to stick
+          without them, server-side. */}
 
       <section className="mt-6 rounded-lg border border-gray-200 bg-white">
         <h2 className="px-4 py-3 text-sm font-semibold text-gray-700">

@@ -8,7 +8,7 @@ import { env } from "@/lib/env";
  * The base URL is env-driven so the copied snippet works against a local /
  * preview deploy; it defaults to the production value from spec section 6.
  */
-const DEFAULT_SDK_BASE_URL = "https://equixity.app";
+const DEFAULT_SDK_BASE_URL = "https://equixity.vercel.app";
 
 export function buildSdkSnippet(publicId: string): string {
   const base = (env.nextPublicAppUrl || DEFAULT_SDK_BASE_URL).replace(/\/+$/, "");

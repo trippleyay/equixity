@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatUsdPrice } from "@/lib/format";
+import { cleanDisplayName, formatUsdPrice } from "@/lib/format";
 
 /**
  * The reward-asset catalog table (spec section 1).
@@ -47,10 +47,18 @@ export function AssetTable({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
 
-  const visible = useMemo(
-    () => (filter === "all" ? assets : assets.filter((a) => a.asset_type === filter)),
-    [assets, filter],
-  );
+  const visible = useMemo(() => {
+    const rows =
+      filter === "all" ? assets : assets.filter((a) => a.asset_type === filter);
+    // "All" is one merged, alphabetical list — not grouped by type. The two
+    // type filters exist for exactly that separation.
+    return [...rows].sort((a, b) =>
+      cleanDisplayName(a.display_name, a.ticker)
+        .localeCompare(cleanDisplayName(b.display_name, b.ticker), undefined, {
+          sensitivity: "base",
+        }),
+    );
+  }, [assets, filter]);
 
   return (
     <div>
@@ -79,9 +87,10 @@ export function AssetTable({
         })}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200">
+      {/* Scroll container: ~50 rows must not push the sections below the fold. */}
+      <div className="max-h-96 overflow-y-auto rounded-lg border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+          <thead className="sticky top-0 z-10 bg-gray-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-gray-600">Asset</th>
               <th className="px-3 py-2 text-left font-medium text-gray-600">Symbol</th>
@@ -154,7 +163,9 @@ function AssetTableRow({
           ) : (
             <span className="h-5 w-5 rounded-full bg-gray-200" />
           )}
-          <span className="text-gray-900">{asset.display_name}</span>
+          <span className="text-gray-900">
+            {cleanDisplayName(asset.display_name, asset.ticker)}
+          </span>
         </div>
       </td>
       <td className="px-3 py-2 font-mono text-xs text-gray-700">{asset.ticker}</td>

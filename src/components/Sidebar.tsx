@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview" },
   { href: "/rewards", label: "Rewards" },
   { href: "/funding", label: "Funding" },
-  { href: "/account", label: "Account" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Sidebar({ merchantName }: { merchantName: string }) {

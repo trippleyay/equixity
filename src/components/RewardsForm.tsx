@@ -1,31 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { CopyButton } from "@/components/CopyButton";
 import { AssetTable, type AssetRow } from "@/components/AssetTable";
 
 /**
  * Rewards configuration form (spec sections 1, 6a, 7).
  *
- * Three changes from the merchant-MVP version:
- *   1. Asset selection is now the shared FILTERABLE TABLE (spec section 1),
- *      not the old 3-item dropdown.
- *   2. `receiving_wallet_address` — the wallet the checkout actually pays into,
- *      which is what makes purchase verification mean anything (spec section 1).
- *   3. The section 6a merchant attestation checkbox. The UI disables the rewards
- *      toggle until it is ticked, but the REAL enforcement is server-side: the
- *      settings API refuses `is_enabled: true` without the attestation on record.
+ * Asset selection is the shared FILTERABLE TABLE (spec section 1). The
+ * receiving wallet and the checkout snippet live on the Settings page —
+ * configuration, not reward tuning.
+ *
+ * The section 6a merchant attestation gates the rewards toggle in the UI, but
+ * the REAL enforcement is server-side: the settings API refuses
+ * `is_enabled: true` without the attestation AND a receiving wallet on record.
  *
  * The 0.01%-20% bound is enforced here for UX and again via Zod + the DB CHECK
  * constraint (the DB is the gate that actually matters). The rate is stored as
  * basis points internally; the UI only ever presents a percentage.
  */
-
-const RECEIVING_WALLET_INFO =
-  "This is the Solana wallet your checkout actually sends customer payments to. " +
-  "Equixity checks every purchase against this address to confirm it's real before " +
-  "issuing a reward — enter the wallet your payment processor pays out to, not a " +
-  "personal or unrelated wallet.";
 
 const ELIGIBILITY_TEXT =
   "I confirm my business does not primarily serve customers in the United States, " +
@@ -65,28 +57,20 @@ export function RewardsForm({
   initialAsset,
   initialBps,
   initialEnabled,
-  initialReceivingWallet,
   initialEligibilityConfirmed,
-  sdkSnippet,
 }: {
   assets: AssetRow[];
   initialAsset: string;
   initialBps: number;
   initialEnabled: boolean;
-  initialReceivingWallet: string | null;
   initialEligibilityConfirmed: boolean;
-  sdkSnippet: string;
 }) {
   const [asset, setAsset] = useState(initialAsset);
   const [percent, setPercent] = useState(bpsToPercentString(initialBps));
   const [enabled, setEnabled] = useState(initialEnabled);
-  const [receivingWallet, setReceivingWallet] = useState(
-    initialReceivingWallet ?? "",
-  );
   const [eligibilityConfirmed, setEligibilityConfirmed] = useState(
     initialEligibilityConfirmed,
   );
-  const [showWalletInfo, setShowWalletInfo] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
@@ -101,17 +85,6 @@ export function RewardsForm({
       return;
     }
 
-    // Cheap pre-flight so the merchant gets an answer before a round trip. The
-    // server validates with `new PublicKey(...)` regardless, which is the check
-    // that actually matters.
-    const trimmedWallet = receivingWallet.trim();
-    if (trimmedWallet !== "" && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmedWallet)) {
-      setStatus({
-        kind: "error",
-        text: "Receiving wallet must be a well-formed base58 Solana address.",
-      });
-      return;
-    }
     if (enabled && !eligibilityConfirmed) {
       setStatus({
         kind: "error",
@@ -130,7 +103,6 @@ export function RewardsForm({
           reward_asset: asset,
           reward_bps: bps,
           is_enabled: enabled,
-          receiving_wallet_address: trimmedWallet,
           confirmed_customer_eligibility: eligibilityConfirmed,
         }),
       });
@@ -162,36 +134,6 @@ export function RewardsForm({
           selectedTicker={asset}
           onSelect={setAsset}
         />
-      </div>
-
-      <div className="mt-6">
-        <p className="flex items-center gap-1 text-sm font-medium text-gray-700">
-          <span>Receiving wallet</span>
-          <button
-            type="button"
-            aria-label="What is the receiving wallet?"
-            onClick={() => setShowWalletInfo((v) => !v)}
-            className="flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-semibold text-gray-500 hover:bg-gray-100"
-          >
-            i
-          </button>
-        </p>
-        {showWalletInfo ? (
-          <p className="mt-2 rounded-md bg-blue-50 p-3 text-xs text-blue-900">
-            {RECEIVING_WALLET_INFO}
-          </p>
-        ) : null}
-        <input
-          type="text"
-          value={receivingWallet}
-          onChange={(e) => setReceivingWallet(e.target.value)}
-          placeholder="The Solana wallet your checkout pays into"
-          className="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
-        />
-        <span className="text-xs text-gray-400">
-          Required before rewards can be verified. Editable at any time — changes
-          apply to future purchases only.
-        </span>
       </div>
 
       <label className="mt-4 block text-sm font-medium text-gray-700">
@@ -253,7 +195,7 @@ export function RewardsForm({
       <p className="text-xs text-gray-400">
         {eligibilityConfirmed
           ? "Turn rewards off to stop your customers from earning while you pause promotions or stop using Equixity. Your asset and rate are kept."
-          : "Confirm the eligibility statement above to enable rewards."}
+          : "Tick the eligibility statement above AND set your receiving wallet (Settings → Configuration) to enable rewards."}
       </p>
 
       <button
@@ -277,20 +219,6 @@ export function RewardsForm({
         </p>
       )}
 
-      <div className="mt-6 border-t border-gray-200 pt-4">
-        <h2 className="text-sm font-semibold text-gray-700">
-          Checkout snippet
-        </h2>
-        <p className="mt-1 text-xs text-gray-500">
-          Paste this into your checkout. It carries only your merchant ID.
-        </p>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-gray-100 p-3 text-xs leading-5">
-          <code>{sdkSnippet}</code>
-        </pre>
-        <div className="mt-2">
-          <CopyButton value={sdkSnippet} label="Copy snippet" />
-        </div>
-      </div>
     </div>
   );
 }

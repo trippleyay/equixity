@@ -4,6 +4,7 @@ import { CURATED_XSTOCK_TICKERS } from "@/lib/asset-curation";
 import { fetchXstockCatalog, fetchXstockPrice } from "@/lib/assets/xstocks";
 import { fetchPrestockCatalog } from "@/lib/assets/prestocks";
 import { fetchMintDecimals } from "@/lib/assets/decimals";
+import { cleanDisplayName } from "@/lib/format";
 
 /**
  * The scheduled catalog sync (spec section 3).
@@ -100,7 +101,7 @@ export async function syncRewardAssets(): Promise<CatalogSyncResult> {
   const xRows = xstocks.map((a) => ({
     ticker: a.ticker,
     asset_type: "xstock" as const,
-    display_name: a.displayName,
+    display_name: cleanDisplayName(a.displayName, a.ticker),
     mint_address: a.mintAddress,
     logo_url: a.logoUrl,
     is_active: CURATED.has(a.underlying),
@@ -110,7 +111,7 @@ export async function syncRewardAssets(): Promise<CatalogSyncResult> {
   const pRows = prestocks.map((a) => ({
     ticker: a.ticker,
     asset_type: "prestock" as const,
-    display_name: a.displayName,
+    display_name: cleanDisplayName(a.displayName, a.ticker),
     mint_address: a.mintAddress,
     logo_url: a.logoUrl,
     is_active: true,
