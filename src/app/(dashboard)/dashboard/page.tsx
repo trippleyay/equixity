@@ -42,7 +42,44 @@ export default async function OverviewPage() {
           value={settings.is_enabled ? "Enabled" : "Disabled"}
           sub="customer earning"
         />
+        <Card
+          label="Receiving wallet"
+          value={settings.receiving_wallet_address ? "Set" : "Not set"}
+          sub={
+            settings.receiving_wallet_address
+              ? `${settings.receiving_wallet_address.slice(0, 4)}…${settings.receiving_wallet_address.slice(-4)}`
+              : "required to verify purchases"
+          }
+        />
+        <Card
+          label="Eligibility"
+          value={settings.confirmed_customer_eligibility ? "Confirmed" : "Not confirmed"}
+          sub="required to enable rewards"
+        />
       </div>
+
+      {/* Setup blockers, stated plainly rather than leaving rewards mysteriously
+          off. Both are enforced server-side too (spec sections 1 and 6a). */}
+      {!settings.receiving_wallet_address ||
+      !settings.confirmed_customer_eligibility ? (
+        <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">Finish setting up before rewards can run:</p>
+          <ul className="mt-2 list-inside list-disc space-y-1">
+            {!settings.receiving_wallet_address ? (
+              <li>
+                Add your <strong>receiving wallet</strong> on the Rewards page — the
+                Solana wallet your checkout actually pays into.
+              </li>
+            ) : null}
+            {!settings.confirmed_customer_eligibility ? (
+              <li>
+                Confirm the <strong>eligibility statement</strong> on the Rewards page
+                before enabling rewards.
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
 
       <section className="mt-6 rounded-lg border border-gray-200 bg-white">
         <h2 className="px-4 py-3 text-sm font-semibold text-gray-700">

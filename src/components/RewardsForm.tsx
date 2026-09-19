@@ -2,20 +2,34 @@
 
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
-
-type AssetOption = {
-  ticker: string;
-  display_name: string;
-  decimals: number;
-};
+import { AssetTable, type AssetRow } from "@/components/AssetTable";
 
 /**
- * Rewards configuration form (spec section 7). Saves via POST
- * /api/merchant/settings. The 0.01%–20% bound is enforced here for UX and again
- * via Zod + the DB CHECK constraint (the DB is the gate that actually matters).
- * The rate is stored as basis points (1–2000) internally, but the UI only ever
- * presents it as a percentage and converts on save.
+ * Rewards configuration form (spec sections 1, 6a, 7).
+ *
+ * Three changes from the merchant-MVP version:
+ *   1. Asset selection is now the shared FILTERABLE TABLE (spec section 1),
+ *      not the old 3-item dropdown.
+ *   2. `receiving_wallet_address` — the wallet the checkout actually pays into,
+ *      which is what makes purchase verification mean anything (spec section 1).
+ *   3. The section 6a merchant attestation checkbox. The UI disables the rewards
+ *      toggle until it is ticked, but the REAL enforcement is server-side: the
+ *      settings API refuses `is_enabled: true` without the attestation on record.
+ *
+ * The 0.01%-20% bound is enforced here for UX and again via Zod + the DB CHECK
+ * constraint (the DB is the gate that actually matters). The rate is stored as
+ * basis points internally; the UI only ever presents a percentage.
  */
+
+const RECEIVING_WALLET_INFO =
+  "This is the Solana wallet your checkout actually sends customer payments to. " +
+  "Equixity checks every purchase against this address to confirm it's real before " +
+  "issuing a reward — enter the wallet your payment processor pays out to, not a " +
+  "personal or unrelated wallet.";
+
+const ELIGIBILITY_TEXT =
+  "I confirm my business does not primarily serve customers in the United States, " +
+  "United Kingdom, Canada, Australia, or any OFAC-sanctioned jurisdiction.";
 
 /** 100 bps -> "1", 150 bps -> "1.5", 25 bps -> "0.25". */
 function bpsToPercentString(bps: number): string {
@@ -29,8 +43,8 @@ function bpsToPercentString(bps: number): string {
 
 /**
  * Parse a percentage string ("1", "1.5", "0.25") into integer basis points
- * (1–2000). Integer math only — at most 2 decimal places because bps are whole
- * hundredths of a percent. Throws with a user-facing message on invalid input.
+ * (1-2000). Integer math only — at most 2 decimals, because bps are whole
+ * hundredths of a percent. Throws with a user-facing message on bad input.
  */
 function percentToBps(input: string): number {
   const s = input.trim();
@@ -51,17 +65,28 @@ export function RewardsForm({
   initialAsset,
   initialBps,
   initialEnabled,
+  initialReceivingWallet,
+  initialEligibilityConfirmed,
   sdkSnippet,
 }: {
-  assets: AssetOption[];
+  assets: AssetRow[];
   initialAsset: string;
   initialBps: number;
   initialEnabled: boolean;
+  initialReceivingWallet: string | null;
+  initialEligibilityConfirmed: boolean;
   sdkSnippet: string;
 }) {
   const [asset, setAsset] = useState(initialAsset);
   const [percent, setPercent] = useState(bpsToPercentString(initialBps));
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [receivingWallet, setReceivingWallet] = useState(
+    initialReceivingWallet ?? "",
+  );
+  const [eligibilityConfirmed, setEligibilityConfirmed] = useState(
+    initialEligibilityConfirmed,
+  );
+  const [showWalletInfo, setShowWalletInfo] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(
     null,
   );
@@ -75,6 +100,26 @@ export function RewardsForm({
       setStatus({ kind: "error", text: (e as Error).message });
       return;
     }
+
+    // Cheap pre-flight so the merchant gets an answer before a round trip. The
+    // server validates with `new PublicKey(...)` regardless, which is the check
+    // that actually matters.
+    const trimmedWallet = receivingWallet.trim();
+    if (trimmedWallet !== "" && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmedWallet)) {
+      setStatus({
+        kind: "error",
+        text: "Receiving wallet must be a well-formed base58 Solana address.",
+      });
+      return;
+    }
+    if (enabled && !eligibilityConfirmed) {
+      setStatus({
+        kind: "error",
+        text: "Confirm the eligibility statement before enabling rewards.",
+      });
+      return;
+    }
+
     setBusy(true);
     setStatus(null);
     try {
@@ -85,6 +130,8 @@ export function RewardsForm({
           reward_asset: asset,
           reward_bps: bps,
           is_enabled: enabled,
+          receiving_wallet_address: trimmedWallet,
+          confirmed_customer_eligibility: eligibilityConfirmed,
         }),
       });
       const body = await res.json();
@@ -104,20 +151,48 @@ export function RewardsForm({
     <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
       <h2 className="text-sm font-semibold text-gray-700">Reward configuration</h2>
 
-      <label className="mt-4 block text-sm font-medium text-gray-700">
-        Reward asset
-        <select
-          value={asset}
-          onChange={(e) => setAsset(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-        >
-          {assets.map((a) => (
-            <option key={a.ticker} value={a.ticker}>
-              {a.display_name} ({a.ticker})
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="mt-4">
+        <p className="text-sm font-medium text-gray-700">Reward asset</p>
+        <p className="mb-2 text-xs text-gray-500">
+          Pick the asset your customers receive. Filter by category, then select one.
+        </p>
+        <AssetTable
+          assets={assets}
+          selectable
+          selectedTicker={asset}
+          onSelect={setAsset}
+        />
+      </div>
+
+      <div className="mt-6">
+        <p className="flex items-center gap-1 text-sm font-medium text-gray-700">
+          <span>Receiving wallet</span>
+          <button
+            type="button"
+            aria-label="What is the receiving wallet?"
+            onClick={() => setShowWalletInfo((v) => !v)}
+            className="flex h-4 w-4 items-center justify-center rounded-full border border-gray-400 text-[10px] font-semibold text-gray-500 hover:bg-gray-100"
+          >
+            i
+          </button>
+        </p>
+        {showWalletInfo ? (
+          <p className="mt-2 rounded-md bg-blue-50 p-3 text-xs text-blue-900">
+            {RECEIVING_WALLET_INFO}
+          </p>
+        ) : null}
+        <input
+          type="text"
+          value={receivingWallet}
+          onChange={(e) => setReceivingWallet(e.target.value)}
+          placeholder="The Solana wallet your checkout pays into"
+          className="mt-2 block w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
+        />
+        <span className="text-xs text-gray-400">
+          Required before rewards can be verified. Editable at any time — changes
+          apply to future purchases only.
+        </span>
+      </div>
 
       <label className="mt-4 block text-sm font-medium text-gray-700">
         Reward percentage
@@ -136,15 +211,34 @@ export function RewardsForm({
         </span>
       </label>
 
+      {/* --- Section 6a merchant attestation --------------------------------- */}
+      <div className="mt-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+        <label className="flex items-start gap-2 text-sm text-gray-800">
+          <input
+            type="checkbox"
+            checked={eligibilityConfirmed}
+            onChange={(e) => setEligibilityConfirmed(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>{ELIGIBILITY_TEXT}</span>
+        </label>
+        <p className="mt-2 text-xs text-gray-500">
+          Required before rewards can be enabled. xStocks and PreStocks are
+          restricted for persons in those jurisdictions, so this is enforced
+          server-side as well as here.
+        </p>
+      </div>
+
       <label className="mt-4 flex cursor-pointer items-center gap-3">
         <button
           type="button"
           role="switch"
           aria-checked={enabled}
+          disabled={!eligibilityConfirmed && !enabled}
           onClick={() => setEnabled(!enabled)}
           className={`relative h-6 w-11 rounded-full transition-colors ${
             enabled ? "bg-green-600" : "bg-gray-300"
-          }`}
+          } ${!eligibilityConfirmed && !enabled ? "cursor-not-allowed opacity-50" : ""}`}
         >
           <span
             className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
@@ -157,8 +251,9 @@ export function RewardsForm({
         </span>
       </label>
       <p className="text-xs text-gray-400">
-        Turn rewards off to stop your customers from earning while you paused
-        promotions or stopped using Equixity. Your asset and rate are kept.
+        {eligibilityConfirmed
+          ? "Turn rewards off to stop your customers from earning while you pause promotions or stop using Equixity. Your asset and rate are kept."
+          : "Confirm the eligibility statement above to enable rewards."}
       </p>
 
       <button

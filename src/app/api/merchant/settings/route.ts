@@ -3,6 +3,7 @@ import {
   getSettings,
   updateSettings,
   validateSettings,
+  SettingsValidationError,
 } from "@/lib/services/merchant";
 import { jsonError, jsonOk, withApi } from "@/lib/http";
 
@@ -30,7 +31,17 @@ export async function POST(req: Request) {
         400,
       );
     }
-    const saved = await updateSettings(merchant.id, validated.value);
-    return jsonOk({ settings: saved });
+    try {
+      const saved = await updateSettings(merchant.id, validated.value);
+      return jsonOk({ settings: saved });
+    } catch (e) {
+      // A settings rejection is the caller's fault (bad ticker, unconfirmed
+      // eligibility, invalid wallet) — surface it as a 400 with the real
+      // message rather than collapsing it into a generic 500.
+      if (e instanceof SettingsValidationError) {
+        return jsonError(e.message, 400);
+      }
+      throw e;
+    }
   });
 }

@@ -1,0 +1,54 @@
+# ============================================================
+# Equixity — asset catalog sync scheduler (spec section 3).
+#
+# WHY THIS EXISTS OUTSIDE VERCEL: section 3 and the definition of done require a
+# 5-minute sync cycle, but Vercel's Hobby plan limits cron jobs to once per day
+# and a 5-minute cron expression FAILS DEPLOYMENT on Hobby. Rather than forcing a
+# Pro upgrade for one job, this workflow calls the app's own CRON_SECRET-gated
+# route on the required cadence. The route is identical either way, so switching
+# to Vercel Cron later needs no code change.
+#
+# REQUIRED REPO SECRETS (Settings -> Secrets and variables -> Actions):
+#   EQUIXITY_APP_URL  e.g. https://equixity.vercel.app   (no trailing slash)
+#   CRON_SECRET       must equal the app's CRON_SECRET env var
+# ============================================================
+
+name: Sync reward asset catalog
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub's scheduler can lag a few minutes under load; for
+    # a rewards catalog that is acceptable (spec section 3: prices do not need
+    # sub-minute freshness). If strict delivery guarantees are ever needed,
+    # Upstash QStash is the documented drop-in alternative.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+# Never let two syncs overlap and fight over the same rows.
+concurrency:
+  group: asset-catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger catalog sync
+        env:
+          APP_URL: ${{ secrets.EQUIXITY_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::EQUIXITY_APP_URL and CRON_SECRET repo secrets must both be set."
+            exit 1
+          fi
+          # --fail-with-body so a 4xx/5xx fails the job loudly instead of
+          # silently reporting success on an error page.
+          curl --fail-with-body --silent --show-error \
+            --max-time 120 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/sync-assets"
+          echo
+          echo "Catalog sync triggered successfully."

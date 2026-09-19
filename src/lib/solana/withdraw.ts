@@ -266,7 +266,7 @@ async function failWithdrawal(id: string, reason: string): Promise<void> {
   });
 }
 
-async function resolveOutcome(
+export async function resolveOutcome(
   signature: string,
   blockhash: Blockhash | null,
 ): Promise<Outcome> {
@@ -290,4 +290,4 @@ async function resolveOutcome(
     return "indeterminate";
   }
 }
-type Outcome = "confirmed" | "notlanded" | "indeterminate";
+export type Outcome = "confirmed" | "notlanded" | "indeterminate";

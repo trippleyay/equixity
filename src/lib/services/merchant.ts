@@ -1,6 +1,9 @@
+import { PublicKey } from "@solana/web3.js";
+import { createHash, randomBytes } from "node:crypto";
 import { getServiceClient } from "@/lib/supabase/service";
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
 import { buildSdkSnippet } from "@/lib/sdk/snippet";
+import { listActiveAssets, type RewardAsset } from "@/lib/services/assets";
 
 /**
  * Merchant-scoped service layer. SERVER-ONLY. Every function takes a merchantId
@@ -9,20 +12,16 @@ import { buildSdkSnippet } from "@/lib/sdk/snippet";
  * (spec sections 5 & 8).
  */
 
-export type AssetOption = {
-  ticker: string;
-  display_name: string;
-  decimals: number;
-};
+/** Re-exported so callers get the catalog type from one place. */
+export type { RewardAsset };
 
-/** The fixed asset_config catalog — merchants pick exactly one (spec section 2). */
-export async function listAssets(): Promise<AssetOption[]> {
-  const service = getServiceClient();
-  const { data } = await service
-    .from("asset_config")
-    .select("ticker, display_name, decimals")
-    .order("ticker");
-  return data ?? [];
+/**
+ * Active reward assets — now the synced, curated catalog (spec section 2)
+ * rather than the fixed 3-row `asset_config` table, which the asset-catalog
+ * migration replaced. Merchants pick exactly one.
+ */
+export async function listAssets(): Promise<RewardAsset[]> {
+  return listActiveAssets();
 }
 
 export type Settings = {
@@ -31,6 +30,12 @@ export type Settings = {
   is_enabled: boolean;
   display_name: string;
   decimals: number;
+  mint_address: string;
+  logo_url: string;
+  /** Null until the merchant registers the wallet their checkout pays into. */
+  receiving_wallet_address: string | null;
+  /** Spec section 6a merchant attestation — gates is_enabled === true. */
+  confirmed_customer_eligibility: boolean;
 };
 
 export function getSdkSnippet(publicId: string): string {
@@ -42,28 +47,37 @@ export async function getSettings(merchantId: string): Promise<Settings> {
   const { data, error } = await service
     .from("merchant_settings")
     .select(
-      "reward_asset, reward_bps, is_enabled, asset_config(display_name, decimals, mint_address)",
+      "reward_asset, reward_bps, is_enabled, receiving_wallet_address, reward_assets(display_name, decimals, mint_address, logo_url), merchants(confirmed_customer_eligibility)",
     )
     .eq("merchant_id", merchantId)
     .maybeSingle();
   // PostgREST embeds a to-one FK as an object; supabase-js types it as an array,
   // so cast to the actual single-row shape.
-  const assetConfig = data
-    ? (data.asset_config as unknown as {
+  const asset = data
+    ? (data.reward_assets as unknown as {
         display_name: string;
         decimals: number;
         mint_address: string;
+        logo_url: string;
       })
     : undefined;
-  if (error || !data || !assetConfig) {
+  const merchant = data
+    ? (data.merchants as unknown as { confirmed_customer_eligibility: boolean })
+    : undefined;
+  if (error || !data || !asset) {
     throw new Error("Merchant settings not found.");
   }
   return {
     reward_asset: data.reward_asset,
     reward_bps: data.reward_bps,
     is_enabled: data.is_enabled,
-    display_name: assetConfig.display_name,
-    decimals: assetConfig.decimals,
+    display_name: asset.display_name,
+    decimals: asset.decimals,
+    mint_address: asset.mint_address,
+    logo_url: asset.logo_url,
+    receiving_wallet_address: data.receiving_wallet_address ?? null,
+    confirmed_customer_eligibility:
+      merchant?.confirmed_customer_eligibility ?? false,
   };
 }
 
@@ -77,25 +91,105 @@ export function validateSettings(body: unknown):
   return { ok: true, value: parsed.data };
 }
 
+/** Thrown when a settings update is rejected on its merits (mapped to HTTP 400). */
+export class SettingsValidationError extends Error {}
+
+/**
+ * Validates a merchant-supplied receiving wallet as a real Solana public key.
+ * `new PublicKey(...)` is the authoritative check — it rejects strings that
+ * merely look base58 but are the wrong length or not a valid curve point.
+ * Empty string clears the field.
+ */
+function parseReceivingWallet(value: string): string | null {
+  if (value === "") return null;
+  try {
+    return new PublicKey(value).toBase58();
+  } catch {
+    throw new SettingsValidationError(
+      "Receiving wallet is not a valid Solana address.",
+    );
+  }
+}
+
 export async function updateSettings(
   merchantId: string,
   input: SettingsInput,
 ): Promise<{ reward_asset: string; reward_bps: number; is_enabled: boolean }> {
   const service = getServiceClient();
+
+  // --- (a) reward_asset must be an ACTIVE asset in the synced catalog ------
+  // The FK guarantees the ticker exists; `is_active` is the curation gate, and
+  // it has to be checked here because a foreign key cannot express it.
+  const { data: asset } = await service
+    .from("reward_assets")
+    .select("ticker")
+    .eq("ticker", input.reward_asset)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!asset) {
+    throw new SettingsValidationError(
+      `'${input.reward_asset}' is not an available reward asset.`,
+    );
+  }
+
+  // --- (b) receiving wallet, validated for real ----------------------------
+  const patch: Record<string, unknown> = {
+    reward_asset: input.reward_asset,
+    reward_bps: input.reward_bps,
+    is_enabled: input.is_enabled,
+    updated_at: new Date().toISOString(),
+  };
+  if (
+    input.receiving_wallet_address !== undefined &&
+    input.receiving_wallet_address !== null
+  ) {
+    patch.receiving_wallet_address = parseReceivingWallet(
+      input.receiving_wallet_address,
+    );
+  }
+
+  // --- (c) section 6a merchant gate, enforced SERVER-SIDE -----------------
+  // Enabling rewards requires the attestation. Ticking the box writes it to
+  // `merchants`; enabling rewards reads it back and refuses if absent. A
+  // disabled checkbox in the UI is not the control, so neither is a
+  // client-supplied `is_enabled: true`.
+  if (input.confirmed_customer_eligibility === true) {
+    const { error: attestError } = await service
+      .from("merchants")
+      .update({
+        confirmed_customer_eligibility: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", merchantId);
+    if (attestError) {
+      throw new Error(`Eligibility confirmation rejected: ${attestError.message}`);
+    }
+  }
+
+  if (input.is_enabled) {
+    const { data: merchant } = await service
+      .from("merchants")
+      .select("confirmed_customer_eligibility")
+      .eq("id", merchantId)
+      .maybeSingle();
+    if (!merchant?.confirmed_customer_eligibility) {
+      throw new SettingsValidationError(
+        "Rewards cannot be enabled until you confirm that your business does not " +
+          "primarily serve customers in the United States, United Kingdom, Canada, " +
+          "Australia, or any OFAC-sanctioned jurisdiction.",
+      );
+    }
+  }
+
   const { data, error } = await service
     .from("merchant_settings")
-    .update({
-      reward_asset: input.reward_asset,
-      reward_bps: input.reward_bps,
-      is_enabled: input.is_enabled,
-      updated_at: new Date().toISOString(),
-    })
+    .update(patch)
     .eq("merchant_id", merchantId)
     .select("reward_asset, reward_bps, is_enabled")
     .single();
   if (error) {
     // The DB CHECK constraint is the gate that actually matters; surface it.
-    throw new Error(`Settings update rejected: ${error.message}`);
+    throw new SettingsValidationError(`Settings update rejected: ${error.message}`);
   }
   return data;
 }

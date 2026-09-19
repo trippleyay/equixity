@@ -1,5 +1,5 @@
 /**
- * Equixity — Merchant SDK (spec section 6).
+ * Equixity — Merchant SDK (spec sections 4 and 6).
  *
  * Served statically at /equixity.js (public dir). Loaded by pasting:
  *
@@ -12,17 +12,18 @@
  *   - Reads data-merchant-id from its own <script> tag on load.
  *   - If missing: console.error a clear message and do NOT attach
  *     window.Equixity — fail loud in dev tools, don't silently no-op.
- *   - If present: expose window.Equixity.complete({ transactionSignature }).
+ *   - Exposes window.Equixity.complete({ transactionSignature, onSuccess,
+ *     onError }), which POSTs to the real verification backend and hands back
+ *     the claim link.
  *
- * complete() validates its input SHAPE only in this build. The
- * purchase-verification backend it will eventually call is a separate,
- * explicitly out-of-scope build (spec section 9). The interface is kept stable
- * so that build can wire in without touching this file's public surface.
+ * The SDK deliberately CALCULATES NOTHING. The reward amount and asset come from
+ * the verification endpoint (spec section 4), so what the customer sees can
+ * never drift from what the backend verified. This file only validates shapes,
+ * calls the API, and surfaces the result.
  *
- * NOTE (spec section 6): once complete() calls a real API, that call is
- * cross-origin from whatever domain the merchant's checkout lives on, so that
- * future endpoint will need CORS headers scoped to accept any origin. Nothing
- * to build today — just don't design that endpoint assuming same-origin.
+ * The call is cross-origin by design (the merchant's checkout lives on their own
+ * domain) and the endpoint accepts any origin with no credentials, which is safe
+ * because it carries no session or cookies.
  */
 (function () {
   "use strict";
@@ -51,13 +52,21 @@
     return;
   }
 
+  // Where the SDK itself was loaded from is where its API lives, so a local or
+  // preview deployment works without any extra configuration.
+  var apiBase = (function () {
+    var src = tag.getAttribute("src") || "";
+    var m = /^(https?:\/\/[^/]+)/.exec(src);
+    return m ? m[1] : "";
+  })();
+
   function complete(options) {
     if (!options || typeof options !== "object") {
       console.error(
         '[Equixity] complete() expects an options object, e.g. ' +
           'Equixity.complete({ transactionSignature: "..." }).'
       );
-      return false;
+      return Promise.resolve(null);
     }
     var transactionSignature = options.transactionSignature;
     if (
@@ -67,12 +76,44 @@
       console.error(
         "[Equixity] complete() requires a non-empty transactionSignature string."
       );
-      return false;
+      return Promise.resolve(null);
     }
-    // FUTURE (out of scope): hand `transactionSignature` to the purchase-
-    // verification endpoint, which must accept any CORS origin. Interface is
-    // stable; nothing sends yet.
-    return true;
+
+    var onSuccess =
+      typeof options.onSuccess === "function" ? options.onSuccess : null;
+    var onError = typeof options.onError === "function" ? options.onError : null;
+
+    return fetch(apiBase + "/api/public/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // The ONLY things sent are the signature and the public merchant id. No
+      // amount is ever supplied by the client — the backend reads it from the
+      // verified on-chain transaction (spec section 4 step 5).
+      body: JSON.stringify({
+        merchantId: merchantId,
+        transactionSignature: transactionSignature,
+      }),
+    })
+      .then(function (res) {
+        return res.json().then(function (json) {
+          if (!res.ok) {
+            var err = new Error(json && json.error ? json.error : "Request failed");
+            err.status = res.status;
+            throw err;
+          }
+          return json;
+        });
+      })
+      .then(function (json) {
+        console.log("[Equixity] Reward verified:", json);
+        if (onSuccess) onSuccess(json);
+        return json;
+      })
+      .catch(function (err) {
+        console.error("[Equixity] " + (err && err.message ? err.message : err));
+        if (onError) onError(err);
+        return null;
+      });
   }
 
   window.Equixity = Object.freeze({ complete: complete });

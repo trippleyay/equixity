@@ -37,4 +37,23 @@ export const env = {
   // destination has never held USDC, the one-time ATA rent) on withdrawals —
   // it must never hold transfer authority over any merchant's USDC.
   feePayerSecretKey: process.env.FEE_PAYER_SECRET_KEY ?? "",
+
+  // Server-only. Jupiter Swap API key (api.jup.ag/swap/v1). Required — the
+  // current Swap API needs an x-api-key header, including on the free tier.
+  jupiterApiKey: process.env.JUPITER_API_KEY ?? "",
+
+  // Privy: the app id ships to the browser by design (the client SDK needs it);
+  // the app secret is server-only and used to verify access tokens.
+  nextPublicPrivyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "",
+  privyAppSecret: process.env.PRIVY_APP_SECRET ?? "",
+
+  // Server-only. Bearer secret required by the asset-sync endpoint, which an
+  // external scheduler (GitHub Actions) calls on a 5-minute cadence — Vercel's
+  // Hobby cron is limited to once per day, so it cannot drive that schedule.
+  cronSecret: process.env.CRON_SECRET ?? "",
+
+  // Server-only. Upstash Redis for rate limiting the two public endpoints
+  // (spec section 7).
+  upstashRedisRestUrl: process.env.UPSTASH_REDIS_REST_URL ?? "",
+  upstashRedisRestToken: process.env.UPSTASH_REDIS_REST_TOKEN ?? "",
 };

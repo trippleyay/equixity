@@ -76,3 +76,33 @@ export function formatBps(bps: number): string {
   const fracStr = frac.toString().padStart(2, "0").replace(/0+$/, "");
   return `${whole}.${fracStr}%`;
 }
+
+/**
+ * Format a `token_price_usd` value (numeric(20,8) transported as text) for
+ * display: thousands separators + 2 decimals, integer math only.
+ *
+ * The price is a display/calc value rather than a ledger amount, but it still
+ * arrives as a decimal string, so it is parsed and rounded with BigInt rather
+ * than parseFloat to keep the no-floats rule intact end to end.
+ */
+export function formatUsdPrice(priceText: string | null | undefined): string {
+  if (!priceText) return "—";
+  const s = String(priceText).trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return "—";
+
+  const [whole, frac = ""] = s.split(".");
+  const cents = Number((frac + "00").slice(0, 2)); // 0-99, safe as a Number
+  // Round half-up on the third decimal, using integer arithmetic only.
+  const third = Number((frac + "000").charAt(2));
+  let centsFinal = cents;
+  let wholeBig = BigInt(whole);
+  if (third >= 5) {
+    centsFinal += 1;
+    if (centsFinal === 100) {
+      centsFinal = 0;
+      wholeBig += 1n;
+    }
+  }
+  const wholeStr = wholeBig.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `$${wholeStr}.${centsFinal.toString().padStart(2, "0")}`;
+}

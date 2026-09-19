@@ -29,7 +29,7 @@ export type FundingTransactionRow = {
  * Amounts come from the "amount" raw-unit string field; never uiAmount (a
  * float), per the no-floats rule.
  */
-function usdcNetReceived(
+export function usdcNetReceived(
   parsed: ParsedTransactionWithMeta | null,
   owner: PublicKey,
   depositAta: PublicKey,

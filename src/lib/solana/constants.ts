@@ -1,12 +1,12 @@
 /**
  * Solana constants for the merchant MVP.
  *
- * This build only ever moves USDC (funding). The three reward assets
- * (SPYx/AAPLx/NVDAx) live in `asset_config` and are Token-2022 tokens with the
- * Scaled UI Amount extension — any future code that reads balances or builds
- * transfers against THOSE mints must use TOKEN_2022_PROGRAM_ID from
- * @solana/spl-token, never TOKEN_PROGRAM_ID (spec section 4). This build never
- * touches them, so only the USDC (legacy SPL Token) program id is used here.
+ * This build moves USDC and, for reward swaps, the customer's chosen reward
+ * asset. USDC is a legacy SPL Token mint. The reward assets (xStocks and
+ * PreStocks) are issued on Token-2022 with the Scaled UI Amount extension, so
+ * any code that reads their mint or builds a transfer against them must use
+ * TOKEN_2022_PROGRAM_ID from @solana/spl-token, never TOKEN_PROGRAM_ID
+ * (spec section 4). See lib/assets/decimals.ts and lib/solana/scaled-amount.ts.
  */
 
 // Official Circle USDC on Solana mainnet-beta (verified against
@@ -23,15 +23,17 @@ export const REWARD_BPS_MIN = 1;
 export const REWARD_BPS_MAX = 2000;
 export const REWARD_BPS_DEFAULT = 100;
 
-// Fixed reward-asset catalog (spec section 2/4). Merchant picks exactly one.
-// The DB foreign key into asset_config is the real gate; this is the client/dev
-// side enum mirror of that seeded catalog.
-export const SUPPORTED_TICKERS = ["SPYx", "AAPLx", "NVDAx"] as const;
-export type RewardTicker = (typeof SUPPORTED_TICKERS)[number];
+// The reward-asset catalog is no longer a constant. It lives in the synced
+// `reward_assets` table (spec section 2) and is read through
+// lib/services/assets.ts. `reward_assets.is_active` — the curation flag — is the
+// real gate on which tickers a merchant may select, checked in the service
+// layer against the database, so the curation list can change without a code
+// change here.
 
 // Default reward asset used when a merchant row is provisioned before they
 // have chosen one (merchant_settings.reward_asset is NOT NULL, no default).
-export const DEFAULT_REWARD_ASSET: RewardTicker = "SPYx";
+// Valid because the asset-catalog migration carries SPYx into reward_assets.
+export const DEFAULT_REWARD_ASSET = "SPYx";
 
 // getSignaturesForAddress paging for poll-on-view funding detection
 // (spec section 5). MVP: newest `limit` signatures, no pagination loop.

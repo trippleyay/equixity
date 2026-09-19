@@ -6,6 +6,7 @@ import {
   type FundingTransactionRow,
 } from "@/lib/solana/sync-deposits";
 import { reconcileWithdrawals } from "@/lib/solana/withdraw";
+import { reconcileClaims } from "@/lib/services/claim-reconcile";
 import { hasAlchemyRpcConfigured } from "@/lib/solana/connection";
 import { hasFeePayerConfigured } from "@/lib/solana/fee-payer";
 import { getBalance } from "@/lib/services/merchant";
@@ -52,6 +53,17 @@ export default async function FundingPage() {
       "environment.";
   }
   withdrawals = await listWithdrawals(merchant.id);
+
+  // Reward claims: same poll-on-view reconciliation as withdrawals (spec
+  // section 6 step 8). A claim stuck in 'claiming' is resolved against the
+  // chain here — never assumed, and never refunded while it might still land.
+  if (hasAlchemyRpcConfigured()) {
+    try {
+      await reconcileClaims();
+    } catch {
+      // Best-effort: a reconciliation failure must not break the Funding view.
+    }
+  }
 
   return (
     <div>

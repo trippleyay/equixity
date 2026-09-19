@@ -1,7 +1,9 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
 import { getDepositAddress } from "@/lib/services/merchant";
+import { getApiKeyStatus } from "@/lib/services/api-keys";
 import { createClient } from "@/lib/supabase/server";
 import { CopyButton } from "@/components/CopyButton";
+import { ApiKeyPanel } from "@/components/ApiKeyPanel";
 
 export default async function AccountPage() {
   const { merchant } = await requireDashboardMerchant();
@@ -9,6 +11,7 @@ export default async function AccountPage() {
   const { data } = await supabase.auth.getUser();
   const email = data?.user?.email ?? "—";
   const depositAddress = await getDepositAddress(merchant.id);
+  const apiKey = await getApiKeyStatus(merchant.id);
 
   return (
     <div>
@@ -33,6 +36,11 @@ export default async function AccountPage() {
           </div>
         </dl>
       </div>
+
+      <ApiKeyPanel
+        initialHasKey={apiKey.has_key}
+        initialLastFour={apiKey.last_four}
+      />
 
       <div className="mt-6">
         <form action="/auth/signout" method="post">

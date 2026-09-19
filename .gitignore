@@ -39,6 +39,7 @@ README.local.md
 
 # spec / build guides — never committed (public repo)
 *-spec.md
+*-spec*.md
 
 # supabase CLI local link state
 supabase/.temp/
