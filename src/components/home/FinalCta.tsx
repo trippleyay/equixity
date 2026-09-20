@@ -13,7 +13,7 @@ export default function FinalCta() {
           we handle the reward distribution for you.
         </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
-          <Button href="/merchant" variant="onDark">
+          <Button href="/login" variant="onDark">
             Reward Customers
           </Button>
           <Button href="/docs" variant="outlineOnDark">

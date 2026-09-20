@@ -6,8 +6,8 @@ import SiteHeader from "@/components/site/SiteHeader";
 import SiteFooter from "@/components/site/SiteFooter";
 
 /**
- * (site) — the public marketing pages (/  /about  /docs  /terms  /privacy
- * /merchant). Route group: no URL prefix, so the app's own routes (/login,
+ * (site) — the public marketing pages (/  /about  /docs  /terms  /privacy).
+ * Route group: no URL prefix, so the app's own routes (/login,
  * /dashboard, /claim/*, /api/*) are untouched.
  *
  * The marketing design was built standalone (see builds/equixity-site, kept

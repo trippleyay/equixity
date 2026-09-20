@@ -57,7 +57,7 @@ export default function SiteHeader() {
               {link.label}
             </Link>
           ))}
-          <Button href="/merchant" variant={transparent ? "outlineOnDark" : "solid"} className="px-5 py-2.5 text-[0.9rem]">
+          <Button href="/login" variant={transparent ? "outlineOnDark" : "solid"} className="px-5 py-2.5 text-[0.9rem]">
             Merchant
           </Button>
         </nav>
@@ -95,7 +95,7 @@ export default function SiteHeader() {
               </Link>
             ))}
             <Link
-              href="/merchant"
+              href="/login"
               onClick={() => setMenuOpen(false)}
               className="mt-1 rounded-full bg-equixity-deep px-5 py-3 text-center text-[0.95rem] font-medium text-white"
             >

@@ -23,7 +23,7 @@ export default function Hero() {
             rewards, you focus on selling.
           </p>
           <div className="mt-9">
-            <Button href="/merchant" variant="onDark">
+            <Button href="/login" variant="onDark">
               Reward Customers
             </Button>
           </div>
