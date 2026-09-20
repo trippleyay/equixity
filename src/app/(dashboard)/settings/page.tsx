@@ -84,7 +84,14 @@ export default async function SettingsPage() {
       />
 
       <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
-        <h2 className="text-sm font-semibold text-ink">Crypto checkout (Solana)</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-ink">Crypto checkout (Solana)</h2>
+          {!settings.receiving_wallet_address && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+              ⚠ Receiving wallet not set
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-xs text-gray-500">
           Paste this into your checkout. It carries only your merchant ID.
         </p>

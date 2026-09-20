@@ -6,7 +6,6 @@ import {
   listRewards,
   totalRewardsIssued,
 } from "@/lib/services/merchant";
-import { listFundingTransactions } from "@/lib/solana/sync-deposits";
 import { formatBaseUnitsWithDecimals, formatBps, formatUsdcUnits } from "@/lib/format";
 import { getRecentClaimAssets } from "@/lib/services/claim-assets";
 
@@ -16,8 +15,6 @@ export default async function OverviewPage() {
   const settings = await getSettings(merchant.id);
   const balance = await getBalance(merchant.id);
   const totals = await totalRewardsIssued(merchant.id);
-  const funding = await listFundingTransactions(merchant.id);
-  const recentFunding = funding.transactions.slice(0, 6);
   const rewards = await listRewards(merchant.id);
   const catalog = await getRecentClaimAssets();
   const asset = catalog.find((a) => a.ticker === settings.reward_asset);
@@ -43,7 +40,7 @@ export default async function OverviewPage() {
           logoUrl={asset?.logo_url}
         />
         <Card
-          label="Status"
+          label="Reward status"
           value={settings.is_enabled ? "Enabled" : "Disabled"}
           sub={`${formatBps(settings.reward_bps)} per purchase`}
         />
@@ -60,19 +57,6 @@ export default async function OverviewPage() {
             Go to Rewards to confirm
           </Link>
           .
-        </Notice>
-      )}
-      {!settings.receiving_wallet_address && (
-        <Notice>
-          Accepting Solana payments? Purchase verification needs a receiving
-          wallet. Set it in{" "}
-          <Link
-            href="/settings"
-            className="font-semibold underline underline-offset-2 hover:opacity-80"
-          >
-            Settings
-          </Link>{" "}
-          - Configuration. Fiat checkout merchants don&apos;t need one.
         </Notice>
       )}
 
@@ -100,40 +84,6 @@ export default async function OverviewPage() {
         )}
       </section>
 
-      <section className="mt-6 overflow-hidden rounded-2xl border border-ink/5 bg-white shadow-soft">
-        <div className="border-b border-ink/5 px-5 py-4 text-sm font-semibold text-ink">
-          Recent activity
-        </div>
-        {recentFunding.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-slate">
-            No activity yet. Send USDC to your deposit address and it will show
-            up here after you open the Funding page.
-          </p>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-ink/5">
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Signature</th>
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Amount</th>
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Detected</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentFunding.map((t) => (
-                <tr key={t.id} className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
-                  <td className="px-5 py-3 font-mono text-xs text-slate">
-                    {t.transaction_signature.slice(0, 20)}…
-                  </td>
-                  <td className="px-5 py-3 font-medium text-ink">${formatUsdcUnits(t.amount_usdc_units)}</td>
-                  <td className="px-5 py-3 text-slate">
-                    {new Date(t.detected_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
     </div>
   );
 }
@@ -172,24 +122,24 @@ function Card({
   }
   return (
     <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft transition hover:shadow-lift">
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate">
-          {label}
-        </div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate">
+        {label}
+      </div>
+      <div className="mt-2 flex items-center gap-2.5">
         {logoUrl ? (
           /* Hotlinked from the issuer's CDN (spec section 3: no re-hosting). */
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={logoUrl}
             alt=""
-            width={40}
-            height={40}
-            className="h-10 w-10 rounded-full"
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-full"
             loading="lazy"
           />
         ) : null}
+        <div className="font-display text-2xl font-medium text-ink">{value}</div>
       </div>
-      <div className="mt-2 font-display text-2xl font-medium text-ink">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-slate">{sub}</div>}
     </div>
   );

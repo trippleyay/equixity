@@ -55,25 +55,6 @@ function NavIcon({ name }: { name: (typeof NAV_ITEMS)[number]["icon"] }) {
   }
 }
 
-/** arrow-right-on-rectangle — the door-with-arrow-out sign-out icon. */
-function SignOutIcon() {
-  return (
-    <svg
-      width={14}
-      height={14}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
-    </svg>
-  );
-}
-
 /**
  * Dashboard sidebar — deep-purple brand panel (theme pulled from the landing
  * page's hero sky). White wordmark, no "Equixity" text: the logo image carries
@@ -125,12 +106,20 @@ export function Sidebar({ merchantName }: { merchantName: string }) {
         <p className="mb-1 truncate text-sm font-medium text-white/85">
           {merchantName}
         </p>
-        <form action="/auth/signout" method="post">
+        <form
+          action="/auth/signout"
+          method="post"
+          onSubmit={(e) => {
+            // Confirm before the server action clears the session.
+            if (!window.confirm("Sign out of Equixity?")) {
+              e.preventDefault();
+            }
+          }}
+        >
           <button
             type="submit"
-            className="flex items-center gap-1.5 text-left text-xs font-medium text-white/50 transition hover:text-white"
+            className="text-left text-xs font-medium text-white/50 transition hover:text-white"
           >
-            <SignOutIcon />
             Sign out
           </button>
         </form>
