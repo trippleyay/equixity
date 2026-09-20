@@ -40,20 +40,24 @@ export default async function SettingsPage() {
       {/* --- Account ------------------------------------------------------ */}
       <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <h2 className="text-sm font-semibold text-ink">Account</h2>
-        <dl className="mt-4 space-y-4 text-sm">
-          <Row label="Business name" value={merchant.name} />
-          <Row label="Email" value={email} />
-          <Row label="Merchant ID" value={merchant.public_id} mono />
-          <div>
-            <dt className="text-xs font-medium text-gray-500">Deposit address</dt>
-            <dd className="mt-1 flex flex-wrap items-center gap-2">
-              <code className="break-all rounded-xl bg-equixity-mist/70 px-3 py-1.5 text-xs">
-                {depositAddress}
-              </code>
-              <CopyButton value={depositAddress} label="Copy address" />
-            </dd>
-          </div>
-        </dl>
+        <div className="mt-4 grid gap-6 text-sm sm:grid-cols-2">
+          <dl className="space-y-4">
+            <Row label="Business name" value={merchant.name} />
+            <Row label="Email" value={email} />
+          </dl>
+          <dl className="space-y-4">
+            <Row label="Merchant ID" value={merchant.public_id} mono />
+            <div>
+              <dt className="text-xs font-medium text-gray-500">Deposit address</dt>
+              <dd className="mt-1 flex flex-wrap items-center gap-2">
+                <code className="break-all rounded-xl bg-equixity-mist/70 px-3 py-1.5 text-xs">
+                  {depositAddress}
+                </code>
+                <CopyButton value={depositAddress} label="Copy address" />
+              </dd>
+            </div>
+          </dl>
+        </div>
         <form action="/auth/signout" method="post" className="mt-5">
           <button
             type="submit"
@@ -67,8 +71,8 @@ export default async function SettingsPage() {
       {/* --- Configuration ------------------------------------------------- */}
       <h2 className="mt-8 text-lg font-semibold text-gray-900">Configuration</h2>
       <p className="mt-1 text-sm text-gray-500">
-        How your checkout talks to Equixity — fiat card payments and Solana
-        crypto payments.
+        Set up how your checkout connects with Equixity for rewards
+        distribution.
       </p>
 
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
@@ -90,15 +94,17 @@ export default async function SettingsPage() {
         <div className="mt-2">
           <CopyButton value={snippet} label="Copy snippet" />
         </div>
-      </div>
 
-      <ReceivingWalletForm
-        initialWallet={settings.receiving_wallet_address}
-        currentAsset={settings.reward_asset}
-        currentBps={settings.reward_bps}
-        currentEnabled={settings.is_enabled}
-        currentEligibilityConfirmed={settings.confirmed_customer_eligibility}
-      />
+        <div className="mt-5 border-t border-ink/5 pt-4">
+          <ReceivingWalletForm
+            initialWallet={settings.receiving_wallet_address}
+            currentAsset={settings.reward_asset}
+            currentBps={settings.reward_bps}
+            currentEnabled={settings.is_enabled}
+            currentEligibilityConfirmed={settings.confirmed_customer_eligibility}
+          />
+        </div>
+      </div>
       </div>
     </div>
   );

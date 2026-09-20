@@ -23,7 +23,7 @@ const sans = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Equixity — Merchant",
+  title: "Equixity - Merchant",
   description:
     "Reward your customers with real tokenized stocks instead of points.",
 };

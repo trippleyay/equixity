@@ -65,10 +65,42 @@ export default async function FundingPage() {
     }
   }
 
+  // Merged activity feed: deposits + withdrawals, newest first. The signature
+  // is the ONLY chain identifier, so it is always the full value with a copy
+  // affordance rather than display-only truncation.
+  const history: Array<{
+    key: string;
+    type: string;
+    amount: string;
+    status: string;
+    ts: number;
+    date: string;
+    signature: string | null;
+  }> = [
+    ...transactions.map((t) => ({
+      key: `d-${t.id}`,
+      type: "Deposit",
+      amount: `$${formatUsdcUnits(t.amount_usdc_units)}`,
+      status: t.status,
+      ts: new Date(t.detected_at).getTime(),
+      date: new Date(t.detected_at).toLocaleString(),
+      signature: t.transaction_signature,
+    })),
+    ...withdrawals.map((w) => ({
+      key: `w-${w.id}`,
+      type: "Withdrawal",
+      amount: `$${formatUsdcUnits(w.amount_usdc_units)}`,
+      status: withdrawStatusLabel(w.status),
+      ts: new Date(w.created_at).getTime(),
+      date: new Date(w.created_at).toLocaleString(),
+      signature: w.transaction_signature,
+    })),
+  ].sort((a, b) => b.ts - a.ts);
+
   return (
     <div>
       <h1 className="font-display text-3xl font-medium text-ink">Funding</h1>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-slate">
         Send USDC to your personal deposit address from any wallet, any time.
       </p>
 
@@ -87,8 +119,8 @@ export default async function FundingPage() {
           <CopyButton value={depositAddress} label="Copy address" />
         </div>
         <p className="mt-2 text-xs text-gray-500">
-          This address is yours alone — any confirmed USDC sent to it is
-          credited to your balance automatically.
+          Please only deposit USDC via the Solana network to this address;
+          these deposits are credited immediately.
         </p>
       </section>
 
@@ -117,79 +149,44 @@ export default async function FundingPage() {
         <WithdrawForm />
       )}
 
-      <section className="mt-6 rounded-2xl border border-ink/5 bg-white shadow-soft">
-        <div className="px-4 py-3 text-sm font-semibold text-ink">
-          Deposit history
+      <section className="mt-6 overflow-hidden rounded-2xl border border-ink/5 bg-white shadow-soft">
+        <div className="border-b border-ink/5 px-5 py-4 text-sm font-semibold text-ink">
+          History
         </div>
-        {transactions.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-gray-500">
-            No deposits yet. Once you send USDC to your address, confirmed
-            transfers appear here.
+        {history.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-gray-500">
+            No activity yet. Deposits and withdrawals appear here once they
+            happen.
           </p>
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="border-b border-ink/5">
               <tr>
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Signature</th>
-                <th className="px-5 py-3">Amount</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Detected</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((t) => (
-                <tr key={t.id} className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
-                  <td className="px-5 py-3 font-mono text-xs text-slate">
-                    {t.transaction_signature.slice(0, 24)}…
-                  </td>
-                  <td className="px-5 py-3">${formatUsdcUnits(t.amount_usdc_units)}</td>
-                  <td className="px-5 py-3 capitalize text-slate">{t.status}</td>
-                  <td className="px-5 py-3 text-slate">
-                    {new Date(t.detected_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="mt-6 rounded-2xl border border-ink/5 bg-white shadow-soft">
-        <div className="px-4 py-3 text-sm font-semibold text-ink">
-          Withdrawal history
-        </div>
-        {withdrawals.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-gray-500">
-            No withdrawals yet. Use the form above to pull your balance out.
-          </p>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-ink/5">
-              <tr>
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Type</th>
                 <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Amount</th>
-                <th className="px-5 py-3">Destination</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Signature</th>
-                <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Status</th>
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Date</th>
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Tx Signature</th>
               </tr>
             </thead>
             <tbody>
-              {withdrawals.map((w) => (
-                <tr key={w.id} className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
-                  <td className="px-5 py-3">${formatUsdcUnits(w.amount_usdc_units)}</td>
-                  <td className="px-5 py-3 font-mono text-xs text-slate">
-                    {w.destination_address.slice(0, 16)}…{w.destination_address.slice(-6)}
-                  </td>
-                  <td className="px-5 py-3 capitalize text-slate">
-                    {withdrawStatusLabel(w.status)}
-                  </td>
-                  <td className="px-5 py-3 font-mono text-xs text-slate">
-                    {w.transaction_signature
-                      ? `${w.transaction_signature.slice(0, 18)}…`
-                      : w.failure_reason ?? "—"}
-                  </td>
-                  <td className="px-5 py-3 text-slate">
-                    {new Date(w.created_at).toLocaleString()}
+              {history.map((row) => (
+                <tr key={row.key} className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
+                  <td className="px-5 py-3 font-medium text-ink">{row.type}</td>
+                  <td className="px-5 py-3">{row.amount}</td>
+                  <td className="px-5 py-3 capitalize text-slate">{row.status}</td>
+                  <td className="px-5 py-3 text-slate">{row.date}</td>
+                  <td className="px-5 py-3">
+                    {row.signature ? (
+                      <span className="flex items-center gap-2">
+                        <code className="font-mono text-xs text-slate">
+                          {row.signature.slice(0, 16)}...{row.signature.slice(-6)}
+                        </code>
+                        <CopyButton value={row.signature} label="Copy" />
+                      </span>
+                    ) : (
+                      <span className="text-slate">-</span>
+                    )}
                   </td>
                 </tr>
               ))}

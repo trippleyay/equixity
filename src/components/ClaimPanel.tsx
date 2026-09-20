@@ -137,7 +137,7 @@ export function ClaimPanel({
 
   if (alreadyDone) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+      <div className="rounded-2xl border border-ink/5 bg-equixity-mist/50 p-4 text-sm text-ink">
         This reward is already marked <strong>{initialStatus}</strong>. Nothing further
         is needed.
       </div>
@@ -146,7 +146,7 @@ export function ClaimPanel({
 
   if (result?.status === "delivered") {
     return (
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
         <p className="font-medium">Your reward has been sent.</p>
         {result.transactionSignature ? (
           <p className="mt-1 break-all text-xs">
@@ -177,8 +177,8 @@ export function ClaimPanel({
   return (
     <div className="space-y-4">
       {/* --- 1. Destination wallet, by either path --------------------------- */}
-      <div className="rounded-lg border border-gray-200 p-4">
-        <p className="text-sm font-medium text-gray-900">1. Choose where to receive it</p>
+      <div className="rounded-2xl border border-ink/5 bg-white p-4 shadow-soft">
+        <p className="text-sm font-semibold text-ink">1. Choose where to receive it</p>
 
         {walletAddress ? (
           <p className="mt-2 break-all font-mono text-xs text-gray-700">
@@ -192,7 +192,7 @@ export function ClaimPanel({
             <button
               type="button"
               onClick={() => setVisible(true)}
-              className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              className="rounded-full bg-equixity-deep px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark"
             >
               Connect a Solana wallet
             </button>
@@ -200,7 +200,7 @@ export function ClaimPanel({
               <button
                 type="button"
                 onClick={() => privy.login?.()}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-ink transition hover:bg-equixity-mist"
               >
                 Sign in with email or Google
               </button>
@@ -210,8 +210,8 @@ export function ClaimPanel({
       </div>
 
       {/* --- 2. Section 6a attestation --------------------------------------- */}
-      <div className="rounded-lg border border-gray-200 p-4">
-        <p className="text-sm font-medium text-gray-900">2. Confirm eligibility</p>
+      <div className="rounded-2xl border border-ink/5 bg-white p-4 shadow-soft">
+        <p className="text-sm font-semibold text-ink">2. Confirm eligibility</p>
         <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
           <input
             type="checkbox"
@@ -235,8 +235,8 @@ export function ClaimPanel({
         disabled={!canClaim}
         className={
           canClaim
-            ? "w-full rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-            : "w-full cursor-not-allowed rounded-md bg-gray-200 px-4 py-2 text-sm font-medium text-gray-500"
+            ? "w-full rounded-full bg-equixity-deep px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark"
+            : "w-full cursor-not-allowed rounded-full bg-gray-200 px-4 py-2.5 text-sm font-medium text-gray-500"
         }
       >
         {busy ? "Claiming…" : "Claim reward"}

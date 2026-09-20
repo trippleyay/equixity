@@ -47,15 +47,15 @@ export default async function ClaimPage({
   const assets = await getRecentClaimAssets();
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10">
+    <main className="mx-auto min-h-screen max-w-2xl bg-gradient-to-b from-equixity-mist/60 via-white to-white px-4 py-12">
       <header className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-gray-500">Equixity reward</p>
-        <h1 className="mt-1 text-2xl font-semibold text-gray-900">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate">Equixity reward</p>
+        <h1 className="mt-1 font-display text-3xl font-medium text-ink">
           {claim.merchant_name} sent you a reward
         </h1>
       </header>
 
-      <section className="mb-6 rounded-lg border border-gray-200 p-5">
+      <section className="mb-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <div className="flex items-center gap-3">
           {claim.asset_logo_url ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -68,11 +68,11 @@ export default async function ClaimPage({
             />
           ) : null}
           <div>
-            <p className="text-lg font-semibold text-gray-900">
+            <p className="font-display text-2xl font-medium text-ink">
               {displayAmount(claim.reward_amount_units, claim.asset_decimals)}{" "}
               {claim.asset_display_name ?? claim.reward_asset}
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate">
               {claim.reward_usdc_units
                 ? `Backed by $${formatUsdcUnits(claim.reward_usdc_units)} USDC`
                 : null}
@@ -88,7 +88,7 @@ export default async function ClaimPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-gray-900">
+        <h2 className="mb-3 text-sm font-semibold text-ink">
           Reward assets available through Equixity
         </h2>
         <AssetTable assets={assets} highlightTicker={claim.reward_asset} />

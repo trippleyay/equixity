@@ -15,10 +15,9 @@ import { useState } from "react";
  */
 
 const WALLET_INFO =
-  "This is the Solana wallet your checkout actually sends customer payments " +
-  "to. Equixity checks every purchase against this address to confirm it's " +
-  "real before issuing a reward — enter the wallet your payment processor " +
-  "pays out to, not a personal or unrelated wallet.";
+  "Equixity checks every purchase against this address to confirm it's real " +
+  "before issuing a reward. Enter the wallet your payment processor pays out " +
+  "to, not a personal or unrelated wallet.";
 
 export function ReceivingWalletForm({
   initialWallet,
@@ -78,7 +77,7 @@ export function ReceivingWalletForm({
   }
 
   return (
-    <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+    <div>
       <h2 className="text-sm font-semibold text-ink">Receiving wallet</h2>
       <p className="mt-1 text-xs text-gray-500">
         The Solana wallet your checkout pays into.
@@ -87,11 +86,11 @@ export function ReceivingWalletForm({
           onClick={() => setShowInfo((v) => !v)}
           className="ml-2 text-xs font-medium text-gray-500 underline hover:text-gray-700"
         >
-          What is this?
+          Why we need this?
         </button>
       </p>
       {showInfo ? (
-        <p className="mt-2 rounded-md bg-blue-50 p-3 text-xs text-blue-900">
+        <p className="mt-2 rounded-2xl bg-equixity-mist/70 p-3 text-xs text-ink">
           {WALLET_INFO}
         </p>
       ) : null}
@@ -104,8 +103,8 @@ export function ReceivingWalletForm({
       />
       <p className="mt-1 text-xs text-gray-400">
         Required for Solana checkout verification (fiat merchants do not need
-        one). Editable at any time
-        — changes apply to future purchases only.
+        one). Editable at any time, though changes only apply to future
+        purchases.
       </p>
       <button
         type="button"

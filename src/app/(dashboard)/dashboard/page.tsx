@@ -1,4 +1,5 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
+import Link from "next/link";
 import {
   getBalance,
   getSettings,
@@ -7,6 +8,7 @@ import {
 } from "@/lib/services/merchant";
 import { listFundingTransactions } from "@/lib/solana/sync-deposits";
 import { formatBaseUnitsWithDecimals, formatBps, formatUsdcUnits } from "@/lib/format";
+import { getRecentClaimAssets } from "@/lib/services/claim-assets";
 
 export default async function OverviewPage() {
   const { merchant } = await requireDashboardMerchant();
@@ -17,6 +19,8 @@ export default async function OverviewPage() {
   const funding = await listFundingTransactions(merchant.id);
   const recentFunding = funding.transactions.slice(0, 6);
   const rewards = await listRewards(merchant.id);
+  const catalog = await getRecentClaimAssets();
+  const asset = catalog.find((a) => a.ticker === settings.reward_asset);
 
   return (
     <div>
@@ -36,36 +40,41 @@ export default async function OverviewPage() {
           label="Reward asset"
           value={settings.display_name}
           sub={settings.reward_asset}
+          logoUrl={asset?.logo_url}
         />
         <Card
-          label="Reward rate"
-          value={formatBps(settings.reward_bps)}
-          sub={`capped at 20%`}
-        />
-        <Card
-          label="Rewards"
+          label="Status"
           value={settings.is_enabled ? "Enabled" : "Disabled"}
-          sub="customer earning"
-        />
-        <Card
-          label="Receiving wallet"
-          value={settings.receiving_wallet_address ? "Set" : "Not set"}
-          sub={
-            settings.receiving_wallet_address
-              ? `${settings.receiving_wallet_address.slice(0, 4)}…${settings.receiving_wallet_address.slice(-4)}`
-              : "required to verify purchases"
-          }
-        />
-        <Card
-          label="Eligibility"
-          value={settings.confirmed_customer_eligibility ? "Confirmed" : "Not confirmed"}
-          sub="required to enable rewards"
+          sub={`${formatBps(settings.reward_bps)} per purchase`}
         />
       </div>
 
-      {/* Setup state is shown in the cards above (receiving wallet / eligibility);
-          no separate warning banner — the Rewards toggle itself refuses to stick
-          without them, server-side. */}
+      {/* Setup notices: only what actually blocks or matters to the merchant. */}
+      {!settings.confirmed_customer_eligibility && (
+        <Notice>
+          Eligibility is not confirmed, so rewards cannot be distributed.{" "}
+          <Link
+            href="/rewards"
+            className="font-semibold underline underline-offset-2 hover:opacity-80"
+          >
+            Go to Rewards to confirm
+          </Link>
+          .
+        </Notice>
+      )}
+      {!settings.receiving_wallet_address && (
+        <Notice>
+          Accepting Solana payments? Purchase verification needs a receiving
+          wallet. Set it in{" "}
+          <Link
+            href="/settings"
+            className="font-semibold underline underline-offset-2 hover:opacity-80"
+          >
+            Settings
+          </Link>{" "}
+          - Configuration. Fiat checkout merchants don&apos;t need one.
+        </Notice>
+      )}
 
       <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <h2 className="text-sm font-semibold text-ink">
@@ -129,16 +138,26 @@ export default async function OverviewPage() {
   );
 }
 
+function Notice({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      {children}
+    </div>
+  );
+}
+
 function Card({
   label,
   value,
   sub,
   featured,
+  logoUrl,
 }: {
   label: string;
   value: string;
   sub?: string;
   featured?: boolean;
+  logoUrl?: string | null;
 }) {
   if (featured) {
     return (
@@ -153,8 +172,22 @@ function Card({
   }
   return (
     <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft transition hover:shadow-lift">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate">
-        {label}
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-slate">
+          {label}
+        </div>
+        {logoUrl ? (
+          /* Hotlinked from the issuer's CDN (spec section 3: no re-hosting). */
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt=""
+            width={40}
+            height={40}
+            className="h-10 w-10 rounded-full"
+            loading="lazy"
+          />
+        ) : null}
       </div>
       <div className="mt-2 font-display text-2xl font-medium text-ink">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-slate">{sub}</div>}

@@ -69,8 +69,7 @@ export function WithdrawForm() {
     <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
       <h2 className="text-sm font-semibold text-ink">Withdraw USDC</h2>
       <p className="mt-1 text-xs text-gray-500">
-        Pull your balance out to any Solana address, in real time. The network
-        fee (and, if needed, first-time account rent) is covered by Equixity.
+        Typically instant. High Solana network traffic may cause slight delays.
       </p>
 
       <label className="mt-4 block text-sm font-medium text-gray-700">
@@ -89,7 +88,7 @@ export function WithdrawForm() {
         Destination address (Solana)
         <input
           type="text"
-          placeholder="Paste a base58 public key…"
+          placeholder="Paste the recipient's wallet address."
           value={destination}
           onChange={(e) => setDestination(e.target.value)}
           className="mt-1 block w-full break-all rounded-full border border-gray-300 bg-white px-4 py-2 font-mono text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"

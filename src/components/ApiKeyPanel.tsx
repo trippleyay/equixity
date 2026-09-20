@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
 
 /**
  * Merchant API key management UI (spec section 4a), shown in
@@ -118,7 +119,7 @@ export function ApiKeyPanel({
   }
 
   return (
-    <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+    <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
       <h2 className="text-sm font-semibold text-ink">Fiat checkout API</h2>
       <p className="mt-1 text-xs text-gray-500">
         For merchants on Stripe, Shopify, or any card checkout: your backend calls
@@ -220,7 +221,16 @@ export function ApiKeyPanel({
       ) : null}
 
       <div className="mt-4 border-t border-gray-200 pt-3">
-        <p className="text-xs font-medium text-gray-600">Reporting a completed order</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-gray-600">Reporting a completed order</p>
+          <CopyButton
+            value={`curl -X POST ${baseUrl}/api/public/complete-card \\
+  -H "Authorization: Bearer <api_key>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"purchaseAmountUsd": 42.00, "externalOrderId": "order_1234"}'`}
+            label="Copy"
+          />
+        </div>
         <pre className="mt-2 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-[11px] leading-5">
           <code>{`curl -X POST ${baseUrl}/api/public/complete-card \\
   -H "Authorization: Bearer <api_key>" \\
