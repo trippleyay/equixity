@@ -1,0 +1,24 @@
+/**
+ * (site)-scoped base styles — the standalone project set these on <body>
+ * (see its app/globals.css). Here they hang off the .site-root wrapper so
+ * they can never leak into the app's own pages (login, dashboard, claim).
+ * Values are the raw palette hexes from the design (tailwind.config.ts in
+ * builds/equixity-site) since theme() is a Tailwind v3 function.
+ */
+.site-root {
+  background-color: #ffffff; /* paper */
+  color: #1c1320; /* ink */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.site-root ::selection {
+  background-color: #ca9ad0; /* equixity.soft */
+  color: #1c1320; /* ink */
+}
+
+.site-root :focus-visible {
+  outline: 2px solid #691280; /* equixity.deep */
+  outline-offset: 2px;
+  border-radius: 2px;
+}

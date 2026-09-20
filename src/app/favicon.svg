@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="256"
+   height="256"
+   viewBox="0 0 67.733333 67.733333"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="favicon.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.9813157"
+     inkscape:cx="116.84155"
+     inkscape:cy="110.0279"
+     inkscape:window-width="1600"
+     inkscape:window-height="831"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <defs
+     id="defs1" />
+  <g
+     id="layer1"
+     transform="matrix(5.3376926,0,0,5.3376926,-0.11486045,-0.11486045)">
+    <path
+       id="rect1"
+       style="fill:#812c8b;fill-opacity:1;fill-rule:evenodd;stroke:#000000;stroke-width:0"
+       d="M 0.8180513,0.02647962 H 11.918646 c 0.43853,0 0.791571,0.35304097 0.791571,0.79157168 V 11.918646 c 0,0.43853 -0.353041,0.791571 -0.791571,0.791571 H 0.8180513 c -0.43853071,0 -0.79157168,-0.353041 -0.79157168,-0.791571 V 0.8180513 c 0,-0.43853071 0.35304097,-0.79157168 0.79157168,-0.79157168 z" />
+    <path
+       d="M 7.8551052,13.479031 H 3.7085124 L 1.7431198,11.467394 V 4.0990984 L 3.6391456,2.465125 H 7.7394939 L 6.5602584,4.145343 H 3.4233378 V 7.8603202 L 4.2942764,6.9045999 H 7.0843631 L 5.912835,8.5848179 H 3.4233378 v 3.2139951 h 3.2525319 z"
+       id="text1"
+       style="font-size:15.7848px;font-family:Greengoth;-inkscape-font-specification:Greengoth;fill:#ffffff;fill-rule:evenodd;stroke:#000000;stroke-width:0"
+       transform="scale(1.2616804,0.79259376)"
+       aria-label="E" />
+  </g>
+</svg>

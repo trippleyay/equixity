@@ -4,3 +4,59 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 }
+
+/* Smooth anchor scrolling for the marketing pages (/#how-it-works). */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Design tokens for the (site) marketing pages — a 1:1 port of the
+   standalone site's tailwind.config.ts (builds/equixity-site) to Tailwind
+   v4 @theme. Same class names, so the copied markup renders identically.
+   Fonts reference the variables set by src/app/(site)/layout.tsx; the
+   var() fallbacks keep the generic stacks for anything outside (site). */
+@theme {
+  --color-paper: #ffffff;
+  --color-ink: #1c1320;
+  --color-slate: #6b6373;
+  --color-equixity: #691280;
+  --color-equixity-deep: #691280;
+  --color-equixity-deepDark: #500f63;
+  --color-equixity-soft: #ca9ad0;
+  --color-equixity-mist: #f5eef8;
+  --color-equixity-cloud: #dcc2ea;
+  --font-display: var(--site-font-display, Georgia), Georgia, serif;
+  --font-sans: var(--site-font-sans, ui-sans-serif), system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --max-width-content: 72rem;
+  --max-width-prose: 38rem;
+  --animate-fade-up: fade-up 0.7s ease-out forwards;
+}
+/* NOTE: the correct @theme namespace for max-width utilities is
+   --max-width-* (see tailwindcss/theme.css), NOT --max-w-* — an earlier
+   attempt used @utility overrides, which lose to the built-ins. */
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
