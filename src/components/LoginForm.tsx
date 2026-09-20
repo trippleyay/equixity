@@ -85,9 +85,9 @@ export function LoginForm() {
   }
 
   return (
-    <main className="mx-auto mt-16 w-full max-w-md">
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-gray-900">
+    <main className="flex min-h-screen w-full items-center justify-center px-4 py-10">
+      <div className="w-full max-w-lg rounded-3xl border border-white/60 bg-gradient-to-b from-white via-white to-equixity-mist p-8 shadow-[0_12px_40px_-12px_rgba(105,18,128,0.18)]">
+        <h1 className="text-xl font-semibold text-ink">
           Equixity Merchant
         </h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -95,22 +95,22 @@ export function LoginForm() {
         </p>
 
         {errorParam === "invalid_link" && (
-          <p className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="mt-3 rounded-full bg-red-50 px-4 py-2 text-sm text-red-700">
             That confirmation link is invalid or expired. Please sign in or sign
             up again.
           </p>
         )}
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-5 flex gap-2">
           {(["signin", "signup"] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${
+              className={`flex-1 rounded-full px-3 py-2 text-sm font-medium transition ${
                 mode === m
-                  ? "bg-gray-900 text-white"
-                  : "bg-white text-gray-600 hover:bg-gray-100"
+                  ? "bg-equixity-deep text-white hover:bg-equixity-deepDark"
+                  : "bg-white text-gray-600 hover:bg-equixity-mist"
               }`}
             >
               {m === "signin" ? "Sign in" : "Create account"}
@@ -118,7 +118,7 @@ export function LoginForm() {
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           {mode === "signup" && (
             <label className="block text-sm font-medium text-gray-700">
               Business name
@@ -126,7 +126,7 @@ export function LoginForm() {
                 type="text"
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 block w-full rounded-full border border-gray-300 bg-white/70 px-4 py-2.5 text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
                 placeholder="Acme Inc."
               />
             </label>
@@ -138,7 +138,7 @@ export function LoginForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 block w-full rounded-full border border-gray-300 bg-white/70 px-4 py-2.5 text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
               placeholder="you@example.com"
             />
           </label>
@@ -150,16 +150,16 @@ export function LoginForm() {
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 block w-full rounded-full border border-gray-300 bg-white/70 px-4 py-2.5 text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
             />
           </label>
 
           {message && (
             <p
-              className={`rounded px-3 py-2 text-sm ${
+              className={`rounded-2xl px-4 py-2 text-sm ${
                 message.kind === "error"
                   ? "bg-red-50 text-red-700"
-                  : "bg-blue-50 text-blue-700"
+                  : "bg-equixity-mist text-equixity-deepDark"
               }`}
             >
               {message.text}
@@ -169,7 +169,7 @@ export function LoginForm() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="w-full rounded-full bg-equixity-deep px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
           >
             {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
           </button>

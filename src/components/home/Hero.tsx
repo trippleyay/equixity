@@ -11,8 +11,6 @@ export default function Hero() {
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover"
       />
-      <div className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-b from-transparent to-white sm:h-8" />
-
       <Container className="relative z-10 pb-28 pt-28 sm:pb-32">
         <div className="max-w-2xl">
           <h1 className="font-display text-[2.5rem] font-medium leading-[1.1] text-white sm:text-5xl lg:text-6xl">
