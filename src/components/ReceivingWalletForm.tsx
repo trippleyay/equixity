@@ -78,8 +78,8 @@ export function ReceivingWalletForm({
   }
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-gray-700">Receiving wallet</h2>
+    <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+      <h2 className="text-sm font-semibold text-ink">Receiving wallet</h2>
       <p className="mt-1 text-xs text-gray-500">
         The Solana wallet your checkout pays into.
         <button
@@ -100,7 +100,7 @@ export function ReceivingWalletForm({
         value={wallet}
         onChange={(e) => setWallet(e.target.value)}
         placeholder="The Solana wallet your checkout pays into"
-        className="mt-3 block w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
+        className="mt-3 block w-full rounded-full border border-gray-300 bg-white px-4 py-2 font-mono text-xs transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
       />
       <p className="mt-1 text-xs text-gray-400">
         Required for Solana checkout verification (fiat merchants do not need
@@ -111,7 +111,7 @@ export function ReceivingWalletForm({
         type="button"
         onClick={save}
         disabled={busy}
-        className="mt-3 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="mt-3 rounded-full bg-equixity-deep px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
       >
         {busy ? "Saving…" : "Save wallet"}
       </button>

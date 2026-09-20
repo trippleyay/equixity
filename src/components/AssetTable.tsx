@@ -77,8 +77,8 @@ export function AssetTable({
               aria-pressed={active}
               className={
                 active
-                  ? "rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white"
-                  : "rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  ? "rounded-full bg-equixity-deep px-3 py-1 text-xs font-medium text-white transition hover:bg-equixity-deepDark"
+                  : "rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-ink transition hover:bg-equixity-mist"
               }
             >
               {f.label} ({count})
@@ -88,17 +88,17 @@ export function AssetTable({
       </div>
 
       {/* Scroll container: ~50 rows must not push the sections below the fold. */}
-      <div className="max-h-96 overflow-y-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="sticky top-0 z-10 bg-gray-50">
+      <div className="max-h-96 overflow-y-auto rounded-2xl border border-ink/10">
+        <table className="min-w-full divide-y divide-ink/10 text-sm">
+          <thead className="sticky top-0 z-10 bg-equixity-mist/60 backdrop-blur-sm">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-600">Asset</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-600">Symbol</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-600">Price</th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate">Asset</th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate">Symbol</th>
+              <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate">Price</th>
               {selectable ? <th className="px-3 py-2" /> : null}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-ink/5 bg-white">
             {visible.length === 0 ? (
               <tr>
                 <td
@@ -143,7 +143,7 @@ function AssetTableRow({
   return (
     <tr
       className={
-        isHighlighted ? "bg-emerald-50" : isSelected ? "bg-blue-50" : undefined
+        isHighlighted ? "bg-emerald-50" : isSelected ? "bg-equixity-mist" : undefined
       }
     >
       <td className="px-3 py-2">
@@ -179,8 +179,8 @@ function AssetTableRow({
             onClick={() => onSelect?.(asset.ticker)}
             className={
               isSelected
-                ? "rounded bg-gray-900 px-2 py-1 text-xs font-medium text-white"
-                : "rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                ? "rounded-full bg-equixity-deep px-3 py-1 text-xs font-medium text-white transition hover:bg-equixity-deepDark"
+                : "rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-ink transition hover:bg-equixity-mist"
             }
           >
             {isSelected ? "Selected" : "Select"}

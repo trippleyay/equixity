@@ -31,6 +31,10 @@ html {
   --max-width-content: 72rem;
   --max-width-prose: 38rem;
   --animate-fade-up: fade-up 0.7s ease-out forwards;
+  --shadow-soft: 0 1px 2px rgba(28, 19, 32, 0.04),
+    0 12px 32px -16px rgba(105, 18, 128, 0.12);
+  --shadow-lift: 0 2px 4px rgba(28, 19, 32, 0.05),
+    0 16px 40px -16px rgba(105, 18, 128, 0.18);
 }
 /* NOTE: the correct @theme namespace for max-width utilities is
    --max-width-* (see tailwindcss/theme.css), NOT --max-w-* — an earlier

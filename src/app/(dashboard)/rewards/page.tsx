@@ -23,7 +23,7 @@ export default async function RewardsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-gray-900">Rewards</h1>
+      <h1 className="font-display text-3xl font-medium text-ink">Rewards</h1>
       <p className="mt-1 text-sm text-gray-500">
         Choose one reward asset and set the reward rate your customers earn.
       </p>

@@ -66,8 +66,8 @@ export function WithdrawForm() {
   }
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-gray-700">Withdraw USDC</h2>
+    <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+      <h2 className="text-sm font-semibold text-ink">Withdraw USDC</h2>
       <p className="mt-1 text-xs text-gray-500">
         Pull your balance out to any Solana address, in real time. The network
         fee (and, if needed, first-time account rent) is covered by Equixity.
@@ -81,7 +81,7 @@ export function WithdrawForm() {
           placeholder="1.00"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
         />
       </label>
 
@@ -92,7 +92,7 @@ export function WithdrawForm() {
           placeholder="Paste a base58 public key…"
           value={destination}
           onChange={(e) => setDestination(e.target.value)}
-          className="mt-1 block w-full break-all rounded-md border border-gray-300 px-3 py-2 font-mono text-sm"
+          className="mt-1 block w-full break-all rounded-full border border-gray-300 bg-white px-4 py-2 font-mono text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
         />
       </label>
 
@@ -100,7 +100,7 @@ export function WithdrawForm() {
         type="button"
         onClick={submit}
         disabled={busy}
-        className="mt-4 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="mt-4 rounded-full bg-equixity-deep px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
       >
         {busy ? "Withdrawing…" : "Withdraw"}
       </button>

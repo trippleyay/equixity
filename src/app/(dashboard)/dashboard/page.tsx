@@ -20,13 +20,18 @@ export default async function OverviewPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-gray-900">Overview</h1>
-      <p className="mt-1 text-sm text-gray-500">
+      <h1 className="font-display text-3xl font-medium text-ink">Overview</h1>
+      <p className="mt-1 text-sm text-slate">
         Welcome, {merchant.name}.
       </p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card label="USDC balance" value={`$${formatUsdcUnits(balance)}`} />
+        <Card
+          featured
+          label="USDC balance"
+          value={`$${formatUsdcUnits(balance)}`}
+          sub="available to fund rewards"
+        />
         <Card
           label="Reward asset"
           value={settings.display_name}
@@ -62,54 +67,56 @@ export default async function OverviewPage() {
           no separate warning banner — the Rewards toggle itself refuses to stick
           without them, server-side. */}
 
-      <section className="mt-6 rounded-lg border border-gray-200 bg-white">
-        <h2 className="px-4 py-3 text-sm font-semibold text-gray-700">
+      <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+        <h2 className="text-sm font-semibold text-ink">
           Total rewards issued
         </h2>
-        <div className="px-4 py-4 text-2xl font-semibold">
-          {totals.count}{" "}
-          <span className="text-sm text-gray-500">
+        <div className="mt-3 flex items-baseline gap-2">
+          <span className="font-display text-3xl font-medium text-ink">
+            {totals.count}
+          </span>
+          <span className="text-sm text-slate">
             {formatBaseUnitsWithDecimals(totals.reward_amount_units, settings.decimals)}{" "}
             {settings.reward_asset}
           </span>
         </div>
         {rewards.length === 0 ? (
-          <p className="px-4 pb-4 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-slate">
             No rewards issued yet. Rewards appear here once a customer earns one.
           </p>
         ) : (
-          <p className="px-4 pb-4 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-slate">
             Aggregated from reward_events (not a stored counter).
           </p>
         )}
       </section>
 
-      <section className="mt-6 rounded-lg border border-gray-200 bg-white">
-        <div className="px-4 py-3 text-sm font-semibold text-gray-700">
+      <section className="mt-6 overflow-hidden rounded-2xl border border-ink/5 bg-white shadow-soft">
+        <div className="border-b border-ink/5 px-5 py-4 text-sm font-semibold text-ink">
           Recent activity
         </div>
         {recentFunding.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-gray-500">
+          <p className="px-5 py-4 text-sm text-slate">
             No activity yet. Send USDC to your deposit address and it will show
             up here after you open the Funding page.
           </p>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-gray-200 text-gray-500">
-              <tr>
-                <th className="px-4 py-2">Signature</th>
-                <th className="px-4 py-2">Amount</th>
-                <th className="px-4 py-2">Detected</th>
+            <thead>
+              <tr className="border-b border-ink/5">
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Signature</th>
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Amount</th>
+                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Detected</th>
               </tr>
             </thead>
             <tbody>
               {recentFunding.map((t) => (
-                <tr key={t.id} className="border-b border-gray-100">
-                  <td className="px-4 py-2 font-mono text-xs text-gray-600">
+                <tr key={t.id} className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
+                  <td className="px-5 py-3 font-mono text-xs text-slate">
                     {t.transaction_signature.slice(0, 20)}…
                   </td>
-                  <td className="px-4 py-2">${formatUsdcUnits(t.amount_usdc_units)}</td>
-                  <td className="px-4 py-2 text-gray-500">
+                  <td className="px-5 py-3 font-medium text-ink">${formatUsdcUnits(t.amount_usdc_units)}</td>
+                  <td className="px-5 py-3 text-slate">
                     {new Date(t.detected_at).toLocaleString()}
                   </td>
                 </tr>
@@ -126,18 +133,31 @@ function Card({
   label,
   value,
   sub,
+  featured,
 }: {
   label: string;
   value: string;
   sub?: string;
+  featured?: boolean;
 }) {
+  if (featured) {
+    return (
+      <div className="rounded-2xl bg-gradient-to-br from-equixity-deep to-[#420b53] p-5 text-white shadow-lift">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+          {label}
+        </div>
+        <div className="mt-2 font-display text-3xl font-medium">{value}</div>
+        {sub && <div className="mt-0.5 text-xs text-white/60">{sub}</div>}
+      </div>
+    );
+  }
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+    <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft transition hover:shadow-lift">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold text-gray-900">{value}</div>
-      {sub && <div className="text-xs text-gray-400">{sub}</div>}
+      <div className="mt-2 font-display text-2xl font-medium text-ink">{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-slate">{sub}</div>}
     </div>
   );
 }

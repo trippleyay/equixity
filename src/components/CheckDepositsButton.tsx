@@ -28,7 +28,7 @@ export function CheckDepositsButton({ disabled }: { disabled?: boolean }) {
       type="button"
       onClick={check}
       disabled={busy || disabled}
-      className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+      className="rounded-full bg-equixity-deep px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
     >
       {busy ? "Checking…" : "Check for new deposits"}
     </button>

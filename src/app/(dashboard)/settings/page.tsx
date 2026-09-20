@@ -32,14 +32,14 @@ export default async function SettingsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
+      <h1 className="font-display text-3xl font-medium text-ink">Settings</h1>
       <p className="mt-1 text-sm text-gray-500">
         Account details and payment configuration.
       </p>
 
       {/* --- Account ------------------------------------------------------ */}
-      <section className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-gray-700">Account</h2>
+      <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+        <h2 className="text-sm font-semibold text-ink">Account</h2>
         <dl className="mt-4 space-y-4 text-sm">
           <Row label="Business name" value={merchant.name} />
           <Row label="Email" value={email} />
@@ -47,7 +47,7 @@ export default async function SettingsPage() {
           <div>
             <dt className="text-xs font-medium text-gray-500">Deposit address</dt>
             <dd className="mt-1 flex flex-wrap items-center gap-2">
-              <code className="break-all rounded bg-gray-100 px-3 py-1.5 text-xs">
+              <code className="break-all rounded-xl bg-equixity-mist/70 px-3 py-1.5 text-xs">
                 {depositAddress}
               </code>
               <CopyButton value={depositAddress} label="Copy address" />
@@ -57,7 +57,7 @@ export default async function SettingsPage() {
         <form action="/auth/signout" method="post" className="mt-5">
           <button
             type="submit"
-            className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+            className="rounded-full border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
           >
             Sign out
           </button>
@@ -79,12 +79,12 @@ export default async function SettingsPage() {
         baseUrl={appBase}
       />
 
-      <div className="rounded-lg border border-gray-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-gray-700">Crypto checkout (Solana)</h2>
+      <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+        <h2 className="text-sm font-semibold text-ink">Crypto checkout (Solana)</h2>
         <p className="mt-1 text-xs text-gray-500">
           Paste this into your checkout. It carries only your merchant ID.
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-gray-100 p-3 text-xs leading-5">
+        <pre className="mt-2 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-xs leading-5">
           <code>{snippet}</code>
         </pre>
         <div className="mt-2">

@@ -120,8 +120,8 @@ export function RewardsForm({
   }
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-gray-700">Reward configuration</h2>
+    <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+      <h2 className="text-sm font-semibold text-ink">Reward configuration</h2>
 
       <div className="mt-4">
         <p className="text-sm font-medium text-gray-700">Reward asset</p>
@@ -146,7 +146,7 @@ export function RewardsForm({
           required
           value={percent}
           onChange={(e) => setPercent(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 block w-full rounded-full border border-gray-300 bg-white px-4 py-2 text-sm transition focus:border-equixity-deep focus:outline-none focus:ring-2 focus:ring-equixity-deep/25"
         />
         <span className="text-xs text-gray-400">
           Between 0.01% and 20%. Default 1%.
@@ -154,7 +154,7 @@ export function RewardsForm({
       </label>
 
       {/* --- Section 6a merchant attestation --------------------------------- */}
-      <div className="mt-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+      <div className="mt-6 rounded-2xl border border-ink/5 bg-equixity-mist/60 p-4">
         <label className="flex items-start gap-2 text-sm text-gray-800">
           <input
             type="checkbox"
@@ -179,7 +179,7 @@ export function RewardsForm({
           disabled={!eligibilityConfirmed && !enabled}
           onClick={() => setEnabled(!enabled)}
           className={`relative h-6 w-11 rounded-full transition-colors ${
-            enabled ? "bg-green-600" : "bg-gray-300"
+            enabled ? "bg-equixity-deep" : "bg-gray-300"
           } ${!eligibilityConfirmed && !enabled ? "cursor-not-allowed opacity-50" : ""}`}
         >
           <span
@@ -202,7 +202,7 @@ export function RewardsForm({
         type="button"
         onClick={save}
         disabled={busy}
-        className="mt-4 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="mt-4 rounded-full bg-equixity-deep px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
       >
         {busy ? "Saving…" : "Save"}
       </button>

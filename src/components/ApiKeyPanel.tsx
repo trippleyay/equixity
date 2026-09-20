@@ -118,8 +118,8 @@ export function ApiKeyPanel({
   }
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-gray-700">Fiat checkout API</h2>
+    <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+      <h2 className="text-sm font-semibold text-ink">Fiat checkout API</h2>
       <p className="mt-1 text-xs text-gray-500">
         For merchants on Stripe, Shopify, or any card checkout: your backend calls
         Equixity with this key to report completed orders. It is separate from your
@@ -157,8 +157,8 @@ export function ApiKeyPanel({
         </thead>
         <tbody>
           {state.hasKey ? (
-            <tr className="border-b border-gray-100">
-              <td className="py-3 font-mono text-xs text-gray-800">
+            <tr className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
+              <td className="py-3 font-mono text-xs text-ink">
                 eqx_••••{state.lastFour ?? "····"}
               </td>
               <td className="py-3 text-xs text-gray-600">
@@ -174,7 +174,7 @@ export function ApiKeyPanel({
                   type="button"
                   onClick={generate}
                   disabled={busy}
-                  className="rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="rounded-full border border-gray-300 px-2.5 py-1 text-xs font-medium text-ink transition hover:bg-equixity-mist disabled:opacity-50"
                 >
                   Regenerate
                 </button>{" "}
@@ -182,14 +182,14 @@ export function ApiKeyPanel({
                   type="button"
                   onClick={remove}
                   disabled={busy}
-                  className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  className="rounded-full border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
                 >
                   Delete
                 </button>
               </td>
             </tr>
           ) : (
-            <tr className="border-b border-gray-100">
+            <tr className="border-b border-ink/5 transition last:border-0 hover:bg-equixity-mist/40">
               <td className="py-3 text-xs text-gray-500" colSpan={3}>
                 No API key generated yet.
               </td>
@@ -198,7 +198,7 @@ export function ApiKeyPanel({
                   type="button"
                   onClick={generate}
                   disabled={busy}
-                  className="rounded bg-gray-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  className="rounded-full bg-equixity-deep px-3 py-1.5 text-xs font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
                 >
                   {busy ? "Working…" : "Generate API key"}
                 </button>
@@ -216,12 +216,12 @@ export function ApiKeyPanel({
       ) : null}
 
       {error ? (
-        <p className="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+        <p className="mt-2 rounded-2xl bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>
       ) : null}
 
       <div className="mt-4 border-t border-gray-200 pt-3">
         <p className="text-xs font-medium text-gray-600">Reporting a completed order</p>
-        <pre className="mt-2 overflow-x-auto rounded-md bg-gray-100 p-3 text-[11px] leading-5">
+        <pre className="mt-2 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-[11px] leading-5">
           <code>{`curl -X POST ${baseUrl}/api/public/complete-card \\
   -H "Authorization: Bearer <api_key>" \\
   -H "Content-Type: application/json" \\
