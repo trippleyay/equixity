@@ -88,7 +88,7 @@ export function AssetTable({
       </div>
 
       {/* Scroll container: ~50 rows must not push the sections below the fold. */}
-      <div className="max-h-96 overflow-y-auto rounded-2xl border border-ink/10">
+      <div className="max-h-96 overflow-auto rounded-2xl border border-ink/10">
         <table className="min-w-full divide-y divide-ink/10 text-sm">
           <thead className="sticky top-0 z-10 bg-equixity-mist/60 backdrop-blur-sm">
             <tr>

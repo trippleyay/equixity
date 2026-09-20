@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: "squares" },
@@ -63,20 +64,10 @@ function NavIcon({ name }: { name: (typeof NAV_ITEMS)[number]["icon"] }) {
  */
 export function Sidebar({ merchantName }: { merchantName: string }) {
   const pathname = usePathname();
-  return (
-    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col overflow-y-auto bg-gradient-to-b from-equixity-deep via-[#5b1170] to-[#420b53]">
-      <div className="px-6 pt-6">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/equixity-wordmark-light.svg"
-          alt="Equixity"
-          className="h-6 w-auto"
-        />
-        <div className="mt-1.5 text-[11px] font-medium tracking-wide text-white/50">
-          Merchant
-        </div>
-      </div>
+  const [open, setOpen] = useState(false);
 
+  const nav = (
+    <>
       <p className="px-6 pt-9 pb-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/40">
         Menu
       </p>
@@ -87,6 +78,7 @@ export function Sidebar({ merchantName }: { merchantName: string }) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => setOpen(false)}
               className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm transition ${
                 active
                   ? "bg-white/15 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
@@ -124,6 +116,87 @@ export function Sidebar({ merchantName }: { merchantName: string }) {
           </button>
         </form>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile top bar (below md the sidebar becomes a slide-over). */}
+      <div className="sticky top-0 z-40 flex items-center justify-between bg-gradient-to-r from-equixity-deep to-[#5b1170] px-4 py-3 md:hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/equixity-wordmark-light.svg" alt="Equixity" className="h-5 w-auto" />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? "Close menu" : "Open menu"}
+          className="rounded-lg p-1.5 text-white/85 transition hover:bg-white/10"
+        >
+          {open ? <CloseIcon /> : <BurgerIcon />}
+        </button>
+      </div>
+
+      {/* Slide-over drawer (mobile) */}
+      {open && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <aside className="absolute left-0 top-0 flex h-full w-64 flex-col overflow-y-auto bg-gradient-to-b from-equixity-deep via-[#5b1170] to-[#420b53] shadow-2xl">
+            <div className="flex items-center justify-between px-6 pt-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/equixity-wordmark-light.svg"
+                alt="Equixity"
+                className="h-6 w-auto"
+              />
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close menu"
+                className="rounded-lg p-1 text-white/70 transition hover:bg-white/10"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+            {nav}
+          </aside>
+        </div>
+      )}
+
+      {/* Desktop sidebar (md and up) */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto bg-gradient-to-b from-equixity-deep via-[#5b1170] to-[#420b53] md:flex">
+        <div className="px-6 pt-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/equixity-wordmark-light.svg"
+            alt="Equixity"
+            className="h-6 w-auto"
+          />
+          <div className="mt-1.5 text-[11px] font-medium tracking-wide text-white/50">
+            Merchant
+          </div>
+        </div>
+        {nav}
+      </aside>
+    </>
+  );
+}
+
+function BurgerIcon() {
+  return (
+    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
+      <path d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
+      <path d="M6 18 18 6M6 6l12 12" />
+    </svg>
   );
 }

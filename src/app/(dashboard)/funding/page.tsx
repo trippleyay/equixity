@@ -149,7 +149,7 @@ export default async function FundingPage() {
         <WithdrawForm />
       )}
 
-      <section className="mt-6 overflow-hidden rounded-2xl border border-ink/5 bg-white shadow-soft">
+      <section className="mt-6 overflow-x-auto rounded-2xl border border-ink/5 bg-white shadow-soft">
         <div className="border-b border-ink/5 px-5 py-4 text-sm font-semibold text-ink">
           History
         </div>
@@ -159,7 +159,7 @@ export default async function FundingPage() {
             happen.
           </p>
         ) : (
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="border-b border-ink/5">
               <tr>
                 <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate">Type</th>

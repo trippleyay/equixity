@@ -20,7 +20,7 @@ import SiteFooter from "@/components/site/SiteFooter";
  *   src/app/globals.css so the same class names resolve in this app.
  */
 export const metadata: Metadata = {
-  title: "Equixity: own a piece of what you buy",
+  title: "Equixity",
   description:
     "Equixity gifts customers real, tokenized stock as a reward for shopping, delivered to a wallet they already own. No crypto experience required, on either side of the checkout.",
 };
