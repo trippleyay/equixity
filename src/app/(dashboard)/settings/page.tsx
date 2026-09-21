@@ -76,14 +76,16 @@ export default async function SettingsPage() {
       </p>
 
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
+      <div className="min-w-0">
       <ApiKeyPanel
         initialHasKey={apiKey.has_key}
         initialLastFour={apiKey.last_four}
         initialCreatedAt={apiKey.created_at}
         baseUrl={appBase}
       />
+      </div>
 
-      <div className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+      <div className="min-w-0 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-ink">Crypto checkout (Solana)</h2>
           {!settings.receiving_wallet_address && (
@@ -95,7 +97,7 @@ export default async function SettingsPage() {
         <p className="mt-1 text-xs text-gray-500">
           Paste this into your checkout. It carries only your merchant ID.
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-xs leading-5">
+        <pre className="mt-2 min-w-0 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-xs leading-5">
           <code>{snippet}</code>
         </pre>
         <div className="mt-2">
