@@ -8,8 +8,7 @@ import {
 import { reconcileWithdrawals } from "@/lib/solana/withdraw";
 import { reconcileClaims } from "@/lib/services/claim-reconcile";
 import { hasAlchemyRpcConfigured } from "@/lib/solana/connection";
-import { getFeePayerKeypair, hasFeePayerConfigured } from "@/lib/solana/fee-payer";
-import { getSolanaConnection } from "@/lib/solana/connection";
+import { hasFeePayerConfigured } from "@/lib/solana/fee-payer";
 import { getBalance } from "@/lib/services/merchant";
 import {
   listWithdrawals,
@@ -25,19 +24,6 @@ export default async function FundingPage() {
 
   const depositAddress = await getDepositAddress(merchant.id);
 
-  // Fee-payer gas watch: withdrawals and claim swaps fail confusingly when
-  // the fee payer cannot cover the network fee, so surface it before it bites.
-  let feePayerSol: number | null = null;
-  if (hasFeePayerConfigured() && hasAlchemyRpcConfigured()) {
-    try {
-      const conn = getSolanaConnection();
-      const lamports = await conn.getBalance(getFeePayerKeypair().publicKey);
-      feePayerSol = lamports / 1_000_000_000;
-    } catch {
-      // advisory only — never block the page on this
-    }
-  }
-
   // Poll-on-view: a page load IS a deposit check (spec sections 1 & 5).
   let balance: string;
   let transactions: FundingTransactionRow[];
@@ -51,9 +37,9 @@ export default async function FundingPage() {
     balance = stored.balance;
     transactions = stored.transactions;
     notice =
-      "Funding sync is not configured (ALCHEMY_SOLANA_RPC_URL is unset), so this " +
-      "page is showing stored data only. Set that env var to enable on-chain " +
-      "deposit detection.";
+      "Deposit detection is temporarily unavailable, so this " +
+      "page is showing stored data only. On-chain deposit detection will " +
+      "resume automatically.";
   }
 
   // Withdrawals: reconcile any stale in-flight rows on page view, then list.
@@ -63,8 +49,7 @@ export default async function FundingPage() {
     await reconcileWithdrawals(merchant.id);
   } else if (!hasFeePayerConfigured()) {
     withdrawNotice =
-      "Withdrawals are disabled — FEE_PAYER_SECRET_KEY is unset in the server " +
-      "environment.";
+      "Withdrawals are temporarily unavailable. Please try again later.";
   }
   withdrawals = await listWithdrawals(merchant.id);
 
@@ -126,13 +111,6 @@ export default async function FundingPage() {
 
       {/* Fee-payer gas watch — advisory only (withdrawals + claim swaps pay gas from it).
           (Fee payer *unconfigured* is already surfaced by the withdrawNotice below.) */}
-      {hasFeePayerConfigured() && feePayerSol !== null && feePayerSol < 0.05 && (
-        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Low gas: the Equixity fee-payer wallet holds {feePayerSol.toFixed(3)}{" "}
-          SOL. Withdrawals and customer claim swaps may start failing until it
-          is topped up.
-        </div>
-      )}
 
       <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <h2 className="text-sm font-semibold text-ink">Deposit address</h2>
