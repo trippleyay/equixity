@@ -8,7 +8,8 @@ import {
 import { reconcileWithdrawals } from "@/lib/solana/withdraw";
 import { reconcileClaims } from "@/lib/services/claim-reconcile";
 import { hasAlchemyRpcConfigured } from "@/lib/solana/connection";
-import { hasFeePayerConfigured } from "@/lib/solana/fee-payer";
+import { getFeePayerKeypair, hasFeePayerConfigured } from "@/lib/solana/fee-payer";
+import { getSolanaConnection } from "@/lib/solana/connection";
 import { getBalance } from "@/lib/services/merchant";
 import {
   listWithdrawals,
@@ -23,6 +24,19 @@ export default async function FundingPage() {
   const { merchant } = await requireDashboardMerchant();
 
   const depositAddress = await getDepositAddress(merchant.id);
+
+  // Fee-payer gas watch: withdrawals and claim swaps fail confusingly when
+  // the fee payer cannot cover the network fee, so surface it before it bites.
+  let feePayerSol: number | null = null;
+  if (hasFeePayerConfigured() && hasAlchemyRpcConfigured()) {
+    try {
+      const conn = getSolanaConnection();
+      const lamports = await conn.getBalance(getFeePayerKeypair().publicKey);
+      feePayerSol = lamports / 1_000_000_000;
+    } catch {
+      // advisory only — never block the page on this
+    }
+  }
 
   // Poll-on-view: a page load IS a deposit check (spec sections 1 & 5).
   let balance: string;
@@ -107,6 +121,16 @@ export default async function FundingPage() {
       {notice && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {notice}
+        </div>
+      )}
+
+      {/* Fee-payer gas watch — advisory only (withdrawals + claim swaps pay gas from it).
+          (Fee payer *unconfigured* is already surfaced by the withdrawNotice below.) */}
+      {hasFeePayerConfigured() && feePayerSol !== null && feePayerSol < 0.05 && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Low gas: the Equixity fee-payer wallet holds {feePayerSol.toFixed(3)}{" "}
+          SOL. Withdrawals and customer claim swaps may start failing until it
+          is topped up.
         </div>
       )}
 

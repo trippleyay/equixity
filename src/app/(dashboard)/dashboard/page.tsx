@@ -8,6 +8,7 @@ import {
 } from "@/lib/services/merchant";
 import { formatBaseUnitsWithDecimals, formatBps, formatUsdcUnits } from "@/lib/format";
 import { getRecentClaimAssets } from "@/lib/services/claim-assets";
+import { listClaimsForMerchant } from "@/lib/services/claims";
 
 export default async function OverviewPage() {
   const { merchant } = await requireDashboardMerchant();
@@ -18,6 +19,17 @@ export default async function OverviewPage() {
   const rewards = await listRewards(merchant.id);
   const catalog = await getRecentClaimAssets();
   const asset = catalog.find((a) => a.ticker === settings.reward_asset);
+
+  // Needs-attention: only shows when something is actually wrong.
+  const now = Date.now();
+  const claims = await listClaimsForMerchant(merchant.id);
+  const attention = claims.filter((c) => {
+    if (c.status === "failed") return true;
+    if (c.status === "submitted" || c.status === "claiming") {
+      return now - new Date(c.created_at).getTime() > 15 * 60_000;
+    }
+    return false;
+  });
 
   return (
     <div>
@@ -47,6 +59,33 @@ export default async function OverviewPage() {
       </div>
 
       {/* Setup notices: only what actually blocks or matters to the merchant. */}
+      {attention.length > 0 && (
+        <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-soft">
+          <h2 className="text-sm font-semibold text-amber-900">
+            Claims needing attention ({attention.length})
+          </h2>
+          <ul className="mt-3 space-y-2 text-sm text-amber-900">
+            {attention.slice(0, 5).map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium uppercase">{c.status}</span>
+                <span className="text-amber-800">
+                  {new Date(c.created_at).toLocaleString()}
+                </span>
+                {c.failure_reason && (
+                  <span className="text-amber-800">- {c.failure_reason}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {attention.length > 5 && (
+            <p className="mt-2 text-xs text-amber-800">
+              And {attention.length - 5} more. Stuck claims reconcile on the
+              Funding page; failed claims have refunded the balance.
+            </p>
+          )}
+        </section>
+      )}
+
       {!settings.confirmed_customer_eligibility && (
         <Notice>
           Eligibility is not confirmed, so rewards cannot be distributed.{" "}

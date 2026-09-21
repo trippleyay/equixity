@@ -103,6 +103,13 @@ export function checkClaimRateLimit(ip: string): Promise<RateLimitResult> {
   return check(claimByIp, ip);
 }
 
+/** Per-IP limit for claim page-view pings (read-only, but still unbounded otherwise). */
+const claimViewByIp = makeLimiter("equixity:rl:claimview:ip", 60, "60 s");
+
+export function checkClaimViewRateLimit(ip: string): Promise<RateLimitResult> {
+  return check(claimViewByIp, ip);
+}
+
 /** Per-IP limit for Privy token verification (abuse gate, not money-moving). */
 const privyVerifyByIp = makeLimiter("equixity:rl:privy:ip", 20, "60 s");
 

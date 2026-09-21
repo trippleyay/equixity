@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getClaimForClaimPage } from "@/lib/services/claims";
 import { recordClaimPageCountry, detectGeo } from "@/lib/compliance/eligibility";
+import { checkClaimViewRateLimit, clientIp } from "@/lib/rate-limit";
+import { ipAddress } from "@vercel/functions";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,14 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const limit = await checkClaimViewRateLimit(clientIp(req, ipAddress));
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again shortly." },
+      { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(limit.retryAfterSeconds ?? 60) } },
+    );
+  }
+
   let body: unknown;
   try {
     body = await req.json();
