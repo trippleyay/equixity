@@ -17,8 +17,8 @@ const sections = [
     detail: "Choose the stock and the percentage of each sale it corresponds to.",
   },
   {
-    title: "The checkout snippet",
-    detail: "The one piece of code that ties a sale to a reward.",
+    title: "The success page snippet",
+    detail: "The one script that turns a completed sale into a reward.",
   },
   {
     title: "On-chain verification for Solana",

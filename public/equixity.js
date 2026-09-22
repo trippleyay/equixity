@@ -1,15 +1,25 @@
 /**
  * Equixity — Merchant notification SDK (reward-delivery spec section 3).
  *
- * Served statically at /equixity.js (public dir). Loaded by pasting:
+ * Served statically at /equixity.js (public dir). Loaded by pasting ONE tag into
+ * the merchant's own SUCCESS PAGE, the page the customer lands on after paying.
+ * That is the only supported placement: there is no checkout-page snippet, and
+ * there is no function for the merchant to call.
  *
- *   Crypto path:
- *   <script src="https://equixity.app/equixity.js" data-merchant-id="MERCHANT_ID"></script>
- *
- *   Fiat path:
+ *   Fiat:
  *   <script src="https://equixity.app/equixity.js"
  *           data-merchant-id="MERCHANT_ID"
  *           data-order-id="EXTERNAL_ORDER_ID"></script>
+ *
+ *   Crypto:
+ *   <script src="https://equixity.app/equixity.js"
+ *           data-merchant-id="MERCHANT_ID"
+ *           data-transaction-signature="TRANSACTION_SIGNATURE"></script>
+ *
+ * Exactly one of the two attributes, never both: it says which purchase this
+ * page is about. Fiat then waits for the reward to be recorded (by the Stripe
+ * webhook or the merchant's own backend); crypto asks Equixity to verify the
+ * payment first, because nobody else has done it yet.
  *
  * This is ALL that ever touches the merchant's page: a small, dismissible
  * badge saying a reward is waiting, linking to the hosted reward page at
@@ -17,11 +27,14 @@
  * no eligibility logic of any kind lives here — the full flow runs on the
  * hosted page under Equixity's own domain (spec sections 1 and 3a).
  *
- * The SDK deliberately CALCULATES NOTHING. The amount, asset name and reward
+ * The SDK deliberately CALCULATES NOTHING: the amount, asset name and reward
  * id come from the Equixity endpoints, so what the customer sees can never
- * drift from what the backend verified. This file only validates shapes,
- * polls /api/public/reward-exists (existence only), calls /api/public/complete
- * for the crypto path, and renders the badge.
+ * drift from what the backend verified. Nothing but the public merchant id and
+ * the purchase reference is ever sent, and on the crypto path the amount is
+ * read from the chain by the backend, never taken from this page. This file
+ * only validates shapes, calls /api/public/complete for the crypto path, polls
+ * /api/public/reward-exists (existence only) for both paths, and renders the
+ * badge.
  *
  * Cross-origin by design; the endpoints accept any origin with no credentials,
  * which is safe because they carry no session or cookies.
@@ -30,14 +43,19 @@
   "use strict";
 
   var SCRIPT_MATCH = /\/equixity\.js(?:\?.*)?$/;
-  // One bounded sweep: after this many polls the badge gives up quietly. A
-  // webhook that never lands should not poll a merchant's page forever.
+  // Bounded work per page load: after this many attempts the badge gives up
+  // quietly. A payment that never lands should not hammer anything forever.
   var MAX_POLLS = 60;
   var POLL_MS = 3000;
+  // Crypto only: verification may simply be a moment behind the chain, so a
+  // few retries are worth it. Anything past this is a payment this page cannot
+  // fix by trying again.
+  var MAX_VERIFY_ATTEMPTS = 5;
 
   function findOwnScriptTag() {
     var candidates = document.querySelectorAll(
-      "script[data-merchant-id], script[data-order-id]"
+      "script[data-merchant-id], script[data-order-id], " +
+        "script[data-transaction-signature]"
     );
     for (var i = 0; i < candidates.length; i++) {
       var src = candidates[i].getAttribute("src") || "";
@@ -49,6 +67,9 @@
   var tag = findOwnScriptTag();
   var merchantId = tag ? tag.getAttribute("data-merchant-id") : null;
   var externalOrderId = tag ? tag.getAttribute("data-order-id") : null;
+  var transactionSignature = tag
+    ? tag.getAttribute("data-transaction-signature")
+    : null;
 
   if (!merchantId || merchantId.trim() === "") {
     console.error(
@@ -124,7 +145,12 @@
     var lead = document.createElement("span");
     lead.textContent = "You earned ";
     var strong = document.createElement("strong");
-    strong.textContent = "$" + sanitize(amountUsd) + " of " + assetLabel(assetName);
+    // An amount that did not come back is left out rather than shown as a
+    // phony "$0.00": a reward that is really zero would not be shown at all.
+    var amount = sanitize(amountUsd);
+    strong.textContent = amount
+      ? "$" + amount + " of " + assetLabel(assetName)
+      : assetLabel(assetName);
     var tail = document.createElement("span");
     tail.textContent = ". Click to claim it.";
     link.appendChild(lead);
@@ -146,125 +172,153 @@
     document.body.appendChild(host);
   }
 
-  // --- Fiat mode: poll existence only, then show the badge -------------------
-  function pollRewardExists() {
-    if (!externalOrderId || externalOrderId.trim() === "") {
-      // Fiat tag without an order id can never find a reward: say so loudly
-      // in the console rather than polling pointlessly.
-      console.error(
-        "[Equixity] data-order-id is empty, so no fiat reward can be found " +
-          "for this page."
-      );
-      return;
-    }
+  // --- Which purchase is this page about? ------------------------------------
+  // Exactly one reference attribute, matching the snippet the merchant pasted.
+  var hasOrderId = !!externalOrderId && externalOrderId.trim() !== "";
+  var hasSignature =
+    !!transactionSignature && transactionSignature.trim() !== "";
 
+  if (hasOrderId && hasSignature) {
+    console.error(
+      "[Equixity] This page's Equixity tag has BOTH data-order-id and " +
+        "data-transaction-signature. Use exactly one: an order id for card " +
+        "payments, a transaction signature for Solana payments."
+    );
+    return;
+  }
+
+  if (!hasOrderId && !hasSignature) {
+    console.error(
+      "[Equixity] This Equixity tag does not say which purchase the page is " +
+        "about, so no reward can be found. Add either " +
+        'data-order-id="..." (card payments) or ' +
+        'data-transaction-signature="..." (Solana payments).'
+    );
+    return;
+  }
+
+  // --- The badge, once a claimable reward is known ---------------------------
+  // The amount is passed through exactly as the backend reported it, so a
+  // missing one stays missing instead of becoming a fake zero.
+  function onRewardFound(json) {
+    renderBadge(json.rewardEventId, json.amountUsd, json.assetName || "");
+  }
+
+  // --- Fiat mode: wait for the reward to be recorded, then show the badge ----
+  function buildRewardExistsUrl() {
+    var purchase = hasOrderId
+      ? "&externalOrderId=" + encodeURIComponent(externalOrderId)
+      : "&transactionSignature=" + encodeURIComponent(transactionSignature);
+    return (
+      apiBase +
+      "/api/public/reward-exists?merchantId=" +
+      encodeURIComponent(merchantId) +
+      purchase
+    );
+  }
+
+  function pollRewardExists() {
     var attempts = 0;
-    var timer = setInterval(function () {
+    function attempt() {
       attempts += 1;
-      if (attempts > MAX_POLLS) {
-        clearInterval(timer);
-        return;
-      }
-      fetch(
-        apiBase +
-          "/api/public/reward-exists?merchantId=" +
-          encodeURIComponent(merchantId) +
-          "&externalOrderId=" +
-          encodeURIComponent(externalOrderId)
-      )
+      if (attempts > MAX_POLLS) return;
+      fetch(buildRewardExistsUrl())
         .then(function (res) {
           return res.ok ? res.json() : null;
         })
         .then(function (json) {
+          // exists:false or a failed read: the reward is just not recorded yet.
+          // Keep looking until the bound.
           if (json && json.exists) {
-            clearInterval(timer);
-            renderBadge(
-              json.rewardEventId,
-              json.amountUsd || "0.00",
-              json.assetName || ""
-            );
+            onRewardFound(json);
+            return;
           }
-          // exists:false or a failed read: the webhook just has not landed
-          // yet. Keep polling until the bound.
+          setTimeout(attempt, POLL_MS);
         })
         .catch(function () {
-          // Transient network failure: keep polling until the bound.
+          // Transient network failure: keep looking until the bound.
+          setTimeout(attempt, POLL_MS);
         });
-    }, POLL_MS);
+    }
+    attempt();
   }
 
-  if (externalOrderId) {
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", pollRewardExists);
-    } else {
-      pollRewardExists();
-    }
-  }
-
-  // --- Crypto mode: complete() then show the badge immediately ---------------
-  function complete(options) {
-    if (!options || typeof options !== "object") {
-      console.error(
-        '[Equixity] complete() expects an options object, e.g. ' +
-          'Equixity.complete({ transactionSignature: "..." }).'
-      );
-      return Promise.resolve(null);
-    }
-    var transactionSignature = options.transactionSignature;
-    if (
-      typeof transactionSignature !== "string" ||
-      transactionSignature.trim() === ""
-    ) {
-      console.error(
-        "[Equixity] complete() requires a non-empty transactionSignature string."
-      );
-      return Promise.resolve(null);
-    }
-
-    var onSuccess =
-      typeof options.onSuccess === "function" ? options.onSuccess : null;
-    var onError = typeof options.onError === "function" ? options.onError : null;
-
-    return fetch(apiBase + "/api/public/complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // The ONLY things sent are the signature and the public merchant id. No
-      // amount is ever supplied by the client; the backend reads it from the
-      // verified on-chain transaction, and the destination wallet is the one
-      // that paid (spec section 2).
-      body: JSON.stringify({
-        merchantId: merchantId,
-        transactionSignature: transactionSignature,
-      }),
-    })
-      .then(function (res) {
-        return res.json().then(function (json) {
-          if (!res.ok) {
-            var err = new Error(json && json.error ? json.error : "Request failed");
-            err.status = res.status;
-            throw err;
+  // --- Crypto mode: verify the payment, then show the badge ------------------
+  // Nobody has verified this payment yet, so the script asks Equixity to. The
+  // backend reads the amount from the chain, never from this page, and records
+  // the reward against the wallet that paid (spec sections 2 and 4).
+  function verifyPayment() {
+    var attempts = 0;
+    function attempt() {
+      attempts += 1;
+      if (attempts > MAX_POLLS) return;
+      fetch(apiBase + "/api/public/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // The ONLY things sent are the signature and the public merchant id.
+        body: JSON.stringify({
+          merchantId: merchantId,
+          transactionSignature: transactionSignature,
+        }),
+      })
+        .then(function (res) {
+          return res.json().then(function (json) {
+            return { status: res.status, body: json };
+          });
+        })
+        .then(function (out) {
+          if (out.status === 200 && out.body && out.body.rewardEventId) {
+            // Recorded. The badge appears for a claimable reward, and stays
+            // away when rewards are switched off for this merchant.
+            if (out.body.status === "pending") {
+              onRewardFound({
+                rewardEventId: out.body.rewardEventId,
+                amountUsd: out.body.rewardUsdcValue,
+                assetName: out.body.assetName,
+              });
+            }
+            return;
           }
-          return json;
-        });
-      })
-      .then(function (json) {
-        // The moment a rewardEventId exists, the badge appears. No polling.
-        if (json && json.rewardEventId && json.status === "pending") {
-          renderBadge(
-            json.rewardEventId,
-            json.rewardUsdcValue || "0.00",
-            json.assetName || ""
+          // Already recorded, by an earlier load of this page or by the
+          // merchant's own backend: the reward is there, so go and find it.
+          if (out.status === 409) {
+            pollRewardExists();
+            return;
+          }
+          // Rate-limited or a server problem: worth another try.
+          if (out.status === 429 || out.status >= 500) {
+            setTimeout(attempt, POLL_MS);
+            return;
+          }
+          // Verification can simply be a moment behind the chain, so give a
+          // handful of tries before accepting that this payment cannot be
+          // matched to a reward.
+          if (out.status === 422 && attempts < MAX_VERIFY_ATTEMPTS) {
+            setTimeout(attempt, POLL_MS);
+            return;
+          }
+          console.error(
+            "[Equixity] " +
+              ((out.body && out.body.error) || "Could not verify this payment.")
           );
-        }
-        if (onSuccess) onSuccess(json);
-        return json;
-      })
-      .catch(function (err) {
-        console.error("[Equixity] " + (err && err.message ? err.message : err));
-        if (onError) onError(err);
-        return null;
-      });
+        })
+        .catch(function () {
+          // Transient network failure: keep trying until the bound.
+          setTimeout(attempt, POLL_MS);
+        });
+    }
+    attempt();
   }
 
-  window.Equixity = Object.freeze({ complete: complete });
+  // --- Start, once the page is ready -----------------------------------------
+  function start() {
+    if (hasSignature) verifyPayment();
+    else pollRewardExists();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
 })();

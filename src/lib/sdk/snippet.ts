@@ -1,9 +1,15 @@
 import { env } from "@/lib/env";
 
 /**
- * SDK snippet (spec section 6). Returns the <script> tag a merchant pastes into
- * their checkout. It carries ONLY the merchant's public ID — never the internal
- * primary key, never any secret (spec sections 2, 6, 8).
+ * SDK snippets (spec section 6). Each returns the <script> tag a merchant pastes
+ * into their own SUCCESS PAGE. It carries ONLY the merchant's public ID — never
+ * the internal primary key, never any secret (spec sections 2, 6, 8).
+ *
+ * There is deliberately no checkout-page snippet. For both payment paths the
+ * script belongs on the page the customer lands on AFTER paying, because that
+ * is the page that can say which order was just placed. Nothing has to be
+ * called from the merchant's own checkout code any more, so a merchant pastes
+ * one tag and writes no code at all.
  *
  * The base URL is env-driven so the copied snippet works against a local /
  * preview deploy; it defaults to the production value from spec section 6.
@@ -17,23 +23,49 @@ const DEFAULT_SDK_BASE_URL = "https://equixity.vercel.app";
  */
 export const FIAT_ORDER_ID_PLACEHOLDER = "ORDER_ID";
 
-export function buildSdkSnippet(publicId: string): string {
-  const base = (env.nextPublicAppUrl || DEFAULT_SDK_BASE_URL).replace(/\/+$/, "");
-  // Intentional raw HTML string; it is served as a literal snippet to copy.
-  return `<script src="${base}/equixity.js" data-merchant-id="${publicId}"></script>`;
+/**
+ * The payment placeholder in the crypto snippet, same reasoning and the same
+ * rule: one value per payment, rendered by the merchant's own success page.
+ * It is the signature of the Solana payment the customer just made, which is
+ * what on-chain verification reads the amount from.
+ */
+export const CRYPTO_TRANSACTION_PLACEHOLDER = "TRANSACTION_SIGNATURE";
+
+function snippetBaseUrl(): string {
+  return (env.nextPublicAppUrl || DEFAULT_SDK_BASE_URL).replace(/\/+$/, "");
 }
 
 /**
- * Fiat notification snippet (spec section 3) — the crypto snippet plus
- * `data-order-id`, and the difference is not cosmetic.
+ * Crypto success-page snippet (spec sections 3, 4).
  *
- * The crypto customer's browser gets a rewardEventId straight back from
- * complete(), so the badge can render with no help from the merchant. A fiat
- * customer's browser knows nothing at all: the purchase was recorded by a
- * Stripe webhook or by the merchant's own backend. The page therefore has to
- * say WHICH order it is, and `data-order-id` is how. With the attribute absent
- * the SDK finds no order, does nothing, and the customer never reaches the
- * hosted reward page at all.
+ * The page says WHICH payment it belongs to with `data-transaction-signature`.
+ * The script then verifies that payment on-chain, records the reward and shows
+ * the badge, so the customer reaches the hosted reward page without the
+ * merchant calling anything.
+ *
+ * The value must be the SAME transaction the purchase was paid with. With the
+ * attribute absent the script finds no payment, does nothing, and the customer
+ * never reaches the hosted reward page at all.
+ */
+export function buildCryptoSdkSnippet(publicId: string): string {
+  const base = snippetBaseUrl();
+  return [
+    `<script src="${base}/equixity.js"`,
+    `        data-merchant-id="${publicId}"`,
+    `        data-transaction-signature="${CRYPTO_TRANSACTION_PLACEHOLDER}"></script>`,
+  ].join("\n");
+}
+
+/**
+ * Fiat success-page snippet (spec sections 3, 5) — the crypto snippet with
+ * `data-order-id` instead of `data-transaction-signature`, and the difference
+ * is not cosmetic.
+ *
+ * On fiat the purchase was already recorded by a Stripe webhook or by the
+ * merchant's own backend, so the page only has to say WHICH order it is and
+ * wait for the reward to show up. `data-order-id` is how. With the attribute
+ * absent the script finds no order, does nothing, and the customer never
+ * reaches the hosted reward page at all.
  *
  * The order id must be the SAME value the reward was recorded against:
  *   * Path A (Stripe)  -> the Checkout Session id, i.e. what Stripe sends as
@@ -41,7 +73,7 @@ export function buildSdkSnippet(publicId: string): string {
  *   * Path B (own API) -> the externalOrderId that was posted.
  */
 export function buildFiatSdkSnippet(publicId: string): string {
-  const base = (env.nextPublicAppUrl || DEFAULT_SDK_BASE_URL).replace(/\/+$/, "");
+  const base = snippetBaseUrl();
   return [
     `<script src="${base}/equixity.js"`,
     `        data-merchant-id="${publicId}"`,

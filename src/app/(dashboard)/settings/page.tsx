@@ -14,6 +14,7 @@ import { FiatWebhookPanel } from "@/components/FiatWebhookPanel";
 import { ReceivingWalletForm } from "@/components/ReceivingWalletForm";
 import {
   buildRewardPageUrl,
+  CRYPTO_TRANSACTION_PLACEHOLDER,
   FIAT_ORDER_ID_PLACEHOLDER,
 } from "@/lib/sdk/snippet";
 import { env } from "@/lib/env";
@@ -23,8 +24,8 @@ import { env } from "@/lib/env";
  *
  * - Account: identity, merchant ID, deposit address, sign out.
  * - Configuration: everything the merchant's integrations need — fiat API key
- *   (table with delete), the Solana checkout snippet, and the receiving
- *   wallet that purchase verification checks against.
+ *   (table with delete), the success-page snippet for each payment path, and
+ *   the receiving wallet that purchase verification checks against.
  */
 export default async function SettingsPage() {
   const { merchant } = await requireDashboardMerchant();
@@ -36,9 +37,11 @@ export default async function SettingsPage() {
   const settings = await getSettings(merchant.id);
   const snippet = getSdkSnippet(merchant.public_id);
   const fiatSnippet = getFiatSdkSnippet(merchant.public_id);
+  const cryptoSignaturePlaceholder = CRYPTO_TRANSACTION_PLACEHOLDER;
   const webhookSecret = await getWebhookSecretStatus(merchant.id);
   const appBase = (env.nextPublicAppUrl || "https://equixity.vercel.app").replace(/\/+$/, "");
   const webhookUrl = `${appBase}/api/public/webhooks/stripe/${merchant.public_id}`;
+  const rewardPagePattern = buildRewardPageUrl("<rewardEventId>");
 
   return (
     <div>
@@ -108,7 +111,9 @@ export default async function SettingsPage() {
 
       <div className="min-w-0 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold text-ink">Crypto checkout (Solana)</h2>
+          <h2 className="text-sm font-semibold text-ink">
+            Crypto payments (Solana)
+          </h2>
           {!settings.receiving_wallet_address && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
               ⚠ Receiving wallet not set
@@ -116,7 +121,8 @@ export default async function SettingsPage() {
           )}
         </div>
         <p className="mt-1 text-xs text-gray-500">
-          Paste this into your checkout. It carries only your merchant ID.
+          Paste this into the page your customer lands on after paying. It
+          carries your merchant ID and replaces the payment placeholder below.
         </p>
         <pre className="mt-2 min-w-0 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-xs leading-5">
           <code>{snippet}</code>
@@ -124,6 +130,21 @@ export default async function SettingsPage() {
         <div className="mt-2">
           <CopyButton value={snippet} label="Copy snippet" />
         </div>
+        <p className="mt-2 text-xs text-gray-500">
+          Replace{" "}
+          <code className="text-[11px]">{cryptoSignaturePlaceholder}</code> with
+          the signature of the payment the customer just made. The script finds
+          the payment, verifies it on chain and shows the reward — nothing else
+          to write.
+        </p>
+        <p className="mt-2 text-xs text-gray-500">
+          Prefer not to add the snippet? The response you already get from{" "}
+          <code className="text-[11px]">/api/public/complete</code> includes a{" "}
+          <code className="text-[11px]">rewardEventId</code>. Send the customer
+          straight to{" "}
+          <code className="text-[11px]">{rewardPagePattern}</code> — that page
+          handles the whole hand-over.
+        </p>
 
         <div className="mt-5 border-t border-ink/5 pt-4">
           <ReceivingWalletForm

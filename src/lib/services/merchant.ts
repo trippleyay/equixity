@@ -1,8 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
-import { createHash, randomBytes } from "node:crypto";
 import { getServiceClient } from "@/lib/supabase/service";
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
-import { buildSdkSnippet, buildFiatSdkSnippet, buildRewardPageUrl } from "@/lib/sdk/snippet";
+import { buildCryptoSdkSnippet, buildFiatSdkSnippet } from "@/lib/sdk/snippet";
 import { listActiveAssets, type RewardAsset } from "@/lib/services/assets";
 
 /**
@@ -38,13 +37,18 @@ export type Settings = {
   confirmed_customer_eligibility: boolean;
 };
 
+/**
+ * The crypto success-page snippet. A merchant pastes this into the page the
+ * customer lands on after paying, and nothing else: the script verifies the
+ * payment itself. See lib/sdk/snippet.ts.
+ */
 export function getSdkSnippet(publicId: string): string {
-  return buildSdkSnippet(publicId);
+  return buildCryptoSdkSnippet(publicId);
 }
 
 /**
- * The fiat notification snippet. Separate from the crypto one because it must
- * carry `data-order-id`: a fiat customer's browser knows nothing about the
+ * The fiat success-page snippet. Same page, same single paste, but it carries
+ * `data-order-id` instead: a fiat customer's browser knows nothing about the
  * purchase (the reward was recorded by Stripe or the merchant's own backend),
  * so without that attribute the badge finds no order and the customer never
  * reaches the hosted reward page. See lib/sdk/snippet.ts.

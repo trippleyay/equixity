@@ -1,20 +1,29 @@
 import { NextResponse } from "next/server";
 import { ipAddress } from "@vercel/functions";
-import { findClaimableByOrderId } from "@/lib/services/reward-delivery";
+import {
+  findClaimableByOrderId,
+  findClaimableBySignature,
+} from "@/lib/services/reward-delivery";
 import { checkRewardExistsRateLimit, clientIp } from "@/lib/rate-limit";
 import { formatUsdcUnits } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/public/reward-exists — the fiat notification's ONLY data source
+ * GET /api/public/reward-exists — the notification's ONLY data source
  * (reward-delivery spec section 4).
  *
- * Existence only: does a still-claimable reward exist for this (merchant,
- * external order) pair yet. It NEVER evaluates eligibility, NEVER reads or
- * writes any status, and never runs the geo check — eligibility is decided
- * entirely on the hosted reward page. This is what lets the notification stay
- * a dumb poll that cannot leak compliance state onto a merchant's site.
+ * The success page says which purchase it belongs to in exactly ONE way, and
+ * this endpoint accepts exactly one of the two, matching the snippet attribute:
+ *   * `externalOrderId`      — fiat (Stripe session id, or the order id their
+ *                              own backend posted);
+ *   * `transactionSignature` — crypto (the Solana payment's signature).
+ *
+ * Existence only: does a still-claimable reward exist for this (merchant, that
+ * purchase) pair yet. It NEVER evaluates eligibility, NEVER reads or writes any
+ * status, and never runs the geo check — eligibility is decided entirely on the
+ * hosted reward page. This is what lets the notification stay a dumb poll that
+ * cannot leak compliance state onto a merchant's site.
  *
  * PUBLIC and cross-origin by design: it is polled from the merchant's own
  * success page, so CORS is open with no credentials, same as /complete.
@@ -52,10 +61,18 @@ export async function GET(req: Request): Promise<NextResponse> {
   const url = new URL(req.url);
   const merchantId = (url.searchParams.get("merchantId") ?? "").trim();
   const externalOrderId = (url.searchParams.get("externalOrderId") ?? "").trim();
+  const transactionSignature = (
+    url.searchParams.get("transactionSignature") ?? ""
+  ).trim();
 
-  if (!merchantId || !externalOrderId) {
+  if (!merchantId) {
+    return corsJson({ error: "merchantId is required." }, 400);
+  }
+  // Exactly one purchase reference, matching the single snippet attribute the
+  // page used. Both at once would be ambiguous, and neither is unanswerable.
+  if (Boolean(externalOrderId) === Boolean(transactionSignature)) {
     return corsJson(
-      { error: "merchantId and externalOrderId are required." },
+      { error: "Provide exactly one of externalOrderId or transactionSignature." },
       400,
     );
   }
@@ -65,7 +82,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     return corsJson({ error: "Unknown merchant." }, 404);
   }
 
-  const result = await findClaimableByOrderId(merchantId, externalOrderId);
+  const result = externalOrderId
+    ? await findClaimableByOrderId(merchantId, externalOrderId)
+    : await findClaimableBySignature(merchantId, transactionSignature);
   if (!result.exists) {
     // The webhook has not landed yet, or the reward is no longer claimable.
     // Either way the notification simply does not appear.

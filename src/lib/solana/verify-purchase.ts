@@ -10,9 +10,9 @@ import { FUNDING_COMMITMENT, USDC_MINT } from "@/lib/solana/constants";
  *
  * WHY THIS EXISTS AT ALL: `merchantId` is public — it sits in a <script> tag on
  * the merchant's own site — so without a registered wallet to check against,
- * `complete({transactionSignature})` would accept any valid Solana transaction
- * as "proof of purchase" for any merchant. The registered
- * `receiving_wallet_address` is what makes the check mean something.
+ * the success-page snippet would accept any valid Solana transaction as "proof
+ * of purchase" for any merchant. The registered `receiving_wallet_address` is
+ * what makes the check mean something.
  *
  * THE ATA TRAP, handled here the same way the funding sync handles it: on SPL
  * Token an inbound USDC transfer lists the destination's ASSOCIATED TOKEN

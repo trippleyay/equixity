@@ -13,13 +13,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 /**
- * POST /api/public/complete — the `Equixity.complete()` backend (spec section 4).
+ * POST /api/public/complete — the crypto success-page trigger (spec section 4).
  *
- * PUBLIC AND UNAUTHENTICATED BY NECESSITY: it is called from arbitrary customer
- * checkout pages, so there is no session to resolve anything from. That is why
- * this route (a) resolves the merchant by PUBLIC id, (b) never reads a purchase
- * amount from the request body — the body carries only a signature — and
- * (c) is rate-limited per IP and per merchant.
+ * PUBLIC AND UNAUTHENTICATED BY NECESSITY: it is called from a merchant's own
+ * success page as soon as the customer lands there, so there is no session to
+ * resolve anything from. That is why this route (a) resolves the merchant by
+ * PUBLIC id, (b) never reads a purchase amount from the request body — the body
+ * carries only a signature — and (c) is rate-limited per IP and per merchant.
  *
  * CORS is deliberately wide-open (`*`) with no credentials: the endpoint is
  * cross-origin by design, and it carries no cookies or session, so widening the

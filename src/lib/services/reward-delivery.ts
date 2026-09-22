@@ -133,6 +133,29 @@ export async function findClaimableByOrderId(
   merchantId: string,
   externalOrderId: string,
 ): Promise<RewardExistsResult> {
+  return findClaimable(merchantId, "external_order_id", externalOrderId);
+}
+
+/**
+ * The crypto equivalent: the same question, asked with the payment's
+ * transaction signature instead of an order id (spec sections 3, 4). That
+ * signature is what the reward was recorded against on the on-chain path, and
+ * it is public chain data. Existence only, exactly as above — this never
+ * verifies the payment itself; verification stays in /api/public/complete.
+ */
+export async function findClaimableBySignature(
+  merchantId: string,
+  transactionSignature: string,
+): Promise<RewardExistsResult> {
+  return findClaimable(merchantId, "transaction_signature", transactionSignature);
+}
+
+/** One implementation for both paths, so they cannot drift apart. */
+async function findClaimable(
+  merchantId: string,
+  column: "external_order_id" | "transaction_signature",
+  value: string,
+): Promise<RewardExistsResult> {
   const service = getServiceClient();
   const { data } = await service
     .from("reward_events")
@@ -140,7 +163,7 @@ export async function findClaimableByOrderId(
       "id, status, reward_usdc_units::text, merchants!inner(public_id), reward_assets(display_name, ticker, decimals, logo_url)",
     )
     .eq("merchants.public_id", merchantId)
-    .eq("external_order_id", externalOrderId)
+    .eq(column, value)
     .maybeSingle();
 
   if (!data) return { exists: false };

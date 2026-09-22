@@ -7,7 +7,7 @@ import { AssetTable, type AssetRow } from "@/components/AssetTable";
  * Rewards configuration form (spec sections 1, 6a, 7).
  *
  * Asset selection is the shared FILTERABLE TABLE (spec section 1). The
- * receiving wallet and the checkout snippet live on the Settings page —
+ * receiving wallet and the success-page snippets live on the Settings page —
  * configuration, not reward tuning.
  *
  * The section 6a merchant attestation gates the rewards toggle in the UI, but

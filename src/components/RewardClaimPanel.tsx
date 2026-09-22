@@ -77,19 +77,22 @@ export function RewardClaimPanel({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ message: string } | null>(null);
   // Identifies THIS page load for the two-strike geo rule: a refresh makes a
-  // fresh id, so only distinct loads can advance the streak.
-  const viewIdRef = useRef(
-    (typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : String(Date.now()) + "-" + Math.random().toString(36).slice(2)
-    ).slice(0, 64),
-  );
+  // fresh id, so only distinct loads can advance the streak. Generated inside
+  // the load effect (never during render, which must stay pure) and read back
+  // by the confirm call.
+  const viewIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const viewId = (
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now()) + "-" + Math.random().toString(36).slice(2)
+    ).slice(0, 64);
+    viewIdRef.current = viewId;
     const params = new URLSearchParams({
       rewardEventId,
-      view: viewIdRef.current,
+      view: viewId,
     });
     fetch(`/api/public/reward-status?${params.toString()}`)
       .then((r) =>
