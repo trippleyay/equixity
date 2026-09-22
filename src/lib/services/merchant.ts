@@ -2,7 +2,7 @@ import { PublicKey } from "@solana/web3.js";
 import { createHash, randomBytes } from "node:crypto";
 import { getServiceClient } from "@/lib/supabase/service";
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
-import { buildSdkSnippet } from "@/lib/sdk/snippet";
+import { buildSdkSnippet, buildFiatSdkSnippet, buildRewardPageUrl } from "@/lib/sdk/snippet";
 import { listActiveAssets, type RewardAsset } from "@/lib/services/assets";
 
 /**
@@ -40,6 +40,17 @@ export type Settings = {
 
 export function getSdkSnippet(publicId: string): string {
   return buildSdkSnippet(publicId);
+}
+
+/**
+ * The fiat notification snippet. Separate from the crypto one because it must
+ * carry `data-order-id`: a fiat customer's browser knows nothing about the
+ * purchase (the reward was recorded by Stripe or the merchant's own backend),
+ * so without that attribute the badge finds no order and the customer never
+ * reaches the hosted reward page. See lib/sdk/snippet.ts.
+ */
+export function getFiatSdkSnippet(publicId: string): string {
+  return buildFiatSdkSnippet(publicId);
 }
 
 export async function getSettings(merchantId: string): Promise<Settings> {

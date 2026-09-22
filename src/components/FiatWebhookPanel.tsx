@@ -134,6 +134,14 @@ export function FiatWebhookPanel({
             </button>
           </div>
         </li>
+        <li>
+          <span className="font-medium">5.</span> Finally, show the reward to the
+          customer. On the page Stripe sends them to after paying, paste the fiat
+          snippet from the{" "}
+          <span className="font-medium">Fiat checkout API</span> panel next to this
+          one, and set its order id to the Checkout Session id Stripe gives you for
+          that payment. That is what makes the reward appear.
+        </li>
       </ol>
 
       {message && <p className="mt-3 text-sm text-emerald-700">{message}</p>}

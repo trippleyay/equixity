@@ -1,6 +1,7 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
 import {
   getDepositAddress,
+  getFiatSdkSnippet,
   getSdkSnippet,
   getSettings,
 } from "@/lib/services/merchant";
@@ -11,6 +12,10 @@ import { CopyButton } from "@/components/CopyButton";
 import { ApiKeyPanel } from "@/components/ApiKeyPanel";
 import { FiatWebhookPanel } from "@/components/FiatWebhookPanel";
 import { ReceivingWalletForm } from "@/components/ReceivingWalletForm";
+import {
+  buildRewardPageUrl,
+  FIAT_ORDER_ID_PLACEHOLDER,
+} from "@/lib/sdk/snippet";
 import { env } from "@/lib/env";
 
 /**
@@ -30,6 +35,7 @@ export default async function SettingsPage() {
   const apiKey = await getApiKeyStatus(merchant.id);
   const settings = await getSettings(merchant.id);
   const snippet = getSdkSnippet(merchant.public_id);
+  const fiatSnippet = getFiatSdkSnippet(merchant.public_id);
   const webhookSecret = await getWebhookSecretStatus(merchant.id);
   const appBase = (env.nextPublicAppUrl || "https://equixity.vercel.app").replace(/\/+$/, "");
   const webhookUrl = `${appBase}/api/public/webhooks/stripe/${merchant.public_id}`;
@@ -94,6 +100,9 @@ export default async function SettingsPage() {
         initialLastFour={apiKey.last_four}
         initialCreatedAt={apiKey.created_at}
         baseUrl={appBase}
+        fiatSnippet={fiatSnippet}
+        orderIdPlaceholder={FIAT_ORDER_ID_PLACEHOLDER}
+        rewardPagePattern={buildRewardPageUrl("<rewardEventId>")}
       />
       </div>
 

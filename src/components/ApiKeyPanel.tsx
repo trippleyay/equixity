@@ -32,11 +32,20 @@ export function ApiKeyPanel({
   initialLastFour,
   initialCreatedAt,
   baseUrl,
+  fiatSnippet,
+  orderIdPlaceholder,
+  rewardPagePattern,
 }: {
   initialHasKey: boolean;
   initialLastFour: string | null;
   initialCreatedAt: string | null;
   baseUrl: string;
+  /** The fiat snippet, carrying data-order-id — see lib/sdk/snippet.ts. */
+  fiatSnippet: string;
+  /** The placeholder inside that snippet the merchant replaces per order. */
+  orderIdPlaceholder: string;
+  /** Pattern for the hosted reward page, for merchants who skip the snippet. */
+  rewardPagePattern: string;
 }) {
   const [state, setState] = useState<KeyState>({
     hasKey: initialHasKey,
@@ -238,8 +247,34 @@ export function ApiKeyPanel({
   -d '{"purchaseAmountUsd": 42.00, "externalOrderId": "order_1234"}'`}</code>
         </pre>
         <p className="mt-2 text-xs text-gray-500">
-          `externalOrderId` must be unique per order — it is the idempotency guard,
-          so retries never issue a duplicate reward.
+          <code className="text-[11px]">externalOrderId</code> must be unique per
+          order — it is the idempotency guard, so retries never issue a duplicate
+          reward.
+        </p>
+      </div>
+
+      <div className="mt-4 border-t border-gray-200 pt-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-gray-600">
+            Delivering the reward on your success page
+          </p>
+          <CopyButton value={fiatSnippet} label="Copy snippet" />
+        </div>
+        <pre className="mt-2 min-w-0 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-[11px] leading-5">
+          <code>{fiatSnippet}</code>
+        </pre>
+        <p className="mt-2 text-xs text-gray-500">
+          Paste this into the page the customer lands on after paying, and replace{" "}
+          <code className="text-[11px]">{orderIdPlaceholder}</code> with the same
+          order id you reported above. Without the order id the page cannot find
+          the reward, and the customer is never offered it.
+        </p>
+        <p className="mt-2 text-xs text-gray-500">
+          Prefer not to add the snippet? The response you already get back
+          includes a <code className="text-[11px]">rewardEventId</code>. Send the
+          customer straight to{" "}
+          <code className="text-[11px]">{rewardPagePattern}</code> — that page
+          handles the whole hand-over.
         </p>
       </div>
     </div>
