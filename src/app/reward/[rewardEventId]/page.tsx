@@ -1,0 +1,96 @@
+import { notFound } from "next/navigation";
+import {
+  getRewardForHostedPage,
+  type HostedRewardView,
+} from "@/lib/services/reward-delivery";
+import { rewardAttestationText } from "@/lib/compliance/restricted-countries";
+import { formatBaseUnitsWithDecimals, formatUsdcUnits } from "@/lib/format";
+import { RewardProviders } from "@/components/RewardProviders";
+import { RewardClaimPanel } from "@/components/RewardClaimPanel";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * /reward/[rewardEventId] — the hosted reward page
+ * (reward-delivery spec sections 3a and 8).
+ *
+ * The entire customer flow lives HERE, as ordinary React under Equixity's own
+ * domain: the geo check, the attestation checkbox, the blocked message, the
+ * fiat wallet choice, and delivery. The merchant's page carries only the
+ * notification badge that links here and nothing else.
+ *
+ * PUBLIC by design: no Equixity account is needed. Access control is the
+ * unguessable UUID itself, which is why nothing beyond this one reward is ever
+ * rendered or returned (spec section 7).
+ */
+
+/**
+ * Reward amount in the asset's own units ("0.42"), reusing the shared
+ * integer-math formatter rather than a second copy of the same division.
+ */
+function displayAmount(uiish: string | null, decimals: number | null): string {
+  if (!uiish) return "0";
+  return formatBaseUnitsWithDecimals(uiish, decimals ?? 0);
+}
+
+export default async function RewardPage({
+  params,
+}: {
+  params: Promise<{ rewardEventId: string }>;
+}) {
+  const { rewardEventId } = await params;
+  const reward: HostedRewardView | null =
+    await getRewardForHostedPage(rewardEventId);
+  if (!reward) notFound();
+
+  const assetName = reward.asset_display_name ?? reward.reward_asset;
+  const amount = displayAmount(reward.reward_amount_units, reward.asset_decimals);
+
+  return (
+    <main className="mx-auto min-h-screen max-w-2xl bg-gradient-to-b from-equixity-mist/60 via-white to-white px-4 py-12">
+      <header className="mb-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate">
+          Equixity reward
+        </p>
+        <h1 className="mt-1 font-display text-3xl font-medium text-ink">
+          {reward.merchant_name} sent you a reward
+        </h1>
+      </header>
+
+      <section className="mb-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+        <div className="flex items-center gap-3">
+          {reward.asset_logo_url ? (
+            /* Hotlinked from the issuer's CDN (spec section 3: no re-hosting). */
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={reward.asset_logo_url}
+              alt=""
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded-full"
+            />
+          ) : null}
+          <div>
+            <p className="font-display text-2xl font-medium text-ink">
+              {amount} {assetName}
+            </p>
+            <p className="text-sm text-slate">
+              {reward.reward_usdc_units
+                ? `Backed by $${formatUsdcUnits(reward.reward_usdc_units)} USDC`
+                : null}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <RewardProviders>
+          <RewardClaimPanel
+            rewardEventId={rewardEventId}
+            attestationText={rewardAttestationText()}
+          />
+        </RewardProviders>
+      </section>
+    </main>
+  );
+}

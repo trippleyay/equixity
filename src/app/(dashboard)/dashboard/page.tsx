@@ -7,7 +7,7 @@ import {
   totalRewardsIssued,
 } from "@/lib/services/merchant";
 import { formatBaseUnitsWithDecimals, formatBps, formatUsdcUnits } from "@/lib/format";
-import { getRecentClaimAssets } from "@/lib/services/claim-assets";
+import { listAssets } from "@/lib/services/merchant";
 import { listClaimsForMerchant } from "@/lib/services/claims";
 
 export default async function OverviewPage() {
@@ -17,7 +17,7 @@ export default async function OverviewPage() {
   const balance = await getBalance(merchant.id);
   const totals = await totalRewardsIssued(merchant.id);
   const rewards = await listRewards(merchant.id);
-  const catalog = await getRecentClaimAssets();
+  const catalog = await listAssets();
   const asset = catalog.find((a) => a.ticker === settings.reward_asset);
 
   // Needs-attention: only shows when something is actually wrong.

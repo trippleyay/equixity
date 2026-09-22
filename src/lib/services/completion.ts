@@ -1,7 +1,6 @@
 import { getServiceClient } from "@/lib/supabase/service";
 import { getActiveAsset } from "@/lib/services/assets";
 import { calculateReward } from "@/lib/rewards/calculate";
-import { env } from "@/lib/env";
 
 /**
  * Shared purchase -> reward -> claim pipeline (spec section 4 steps 6-9).
@@ -25,23 +24,27 @@ export type CompletionSuccess = {
   ok: true;
   reward_event_id: string;
   /** Absent when rewards were disabled — nothing claimable was created. */
-  claim_url: string | null;
-  /** 'pending' when claimable, 'rewards_disabled' when the toggle was off. */
   status: "pending" | "rewards_disabled";
   reward_asset: string;
+  /** Human asset name for the notification copy ("Apple stock"). */
+  asset_name: string;
   reward_asset_ui_amount: string;
   reward_usdc_ui_value: string;
 };
 
-export type CompletionFailure = { ok: false; httpStatus: number; error: string };
+export type CompletionFailure = {
+  ok: false;
+  httpStatus: number;
+  error: string;
+  /**
+   * True when the "failure" is really "we already recorded this purchase".
+   * A webhook must answer 2xx for those, or the processor retries forever.
+   */
+  duplicate?: boolean;
+};
 
 export type CompletionResult = CompletionSuccess | CompletionFailure;
 
-/** Public claim URL (spec section 4 step 9). Env-driven, like the SDK snippet. */
-export function buildClaimUrl(rewardEventId: string): string {
-  const base = (env.nextPublicAppUrl || "https://equixity.app").replace(/\/+$/, "");
-  return `${base}/claim/${rewardEventId}`;
-}
 export async function recordPurchaseAndReward(params: {
   merchantId: string;
   settings: CompletionSettings;
@@ -51,6 +54,10 @@ export async function recordPurchaseAndReward(params: {
   /** Verified amounts — bigint. Only the matching path's field is populated. */
   purchaseUsdcUnits: bigint | null;
   purchaseCents: bigint | null;
+  /** Crypto path only: the paying wallet, known from the verified transaction. */
+  customerWalletAddress?: string | null;
+  /** Fiat only: processor-provided contact for the (future) backup notice. */
+  backupEmail?: string | null;
 }): Promise<CompletionResult> {
   const {
     merchantId,
@@ -59,11 +66,16 @@ export async function recordPurchaseAndReward(params: {
     externalOrderId,
     purchaseUsdcUnits,
     purchaseCents,
+    customerWalletAddress,
+    backupEmail,
   } = params;
 
-  // --- Step 2: merchant must have finished setup ---------------------------
-  // Reject clearly rather than guessing (spec section 4 step 2 / 4a step 2).
-  if (!settings.receiving_wallet_address) {
+  // --- Step 2: the ON-CHAIN path requires a registered receiving wallet -----
+  // (it is what purchase verification checks against). The card paths do NOT:
+  // a fiat merchant needs no Solana wallet at all (spec section 5: "don't port
+  // that check over"), and requiring one here was breaking complete-card for
+  // exactly those merchants.
+  if (transactionSignature && !settings.receiving_wallet_address) {
     return {
       ok: false,
       httpStatus: 409,
@@ -87,6 +99,7 @@ export async function recordPurchaseAndReward(params: {
         ok: false,
         httpStatus: 409,
         error: "This transaction has already been claimed.",
+        duplicate: true,
       };
     }
   }
@@ -102,6 +115,7 @@ export async function recordPurchaseAndReward(params: {
         ok: false,
         httpStatus: 409,
         error: "This order has already been recorded.",
+        duplicate: true,
       };
     }
   }
@@ -165,6 +179,11 @@ export async function recordPurchaseAndReward(params: {
       p_reward_usdc_units: claimable ? rewardUsdcUnits!.toString() : null,
       p_status: claimable ? "pending" : "rewards_disabled",
       p_create_claim: claimable,
+      // Crypto: the paying wallet IS the destination (spec: "same wallet that
+      // paid"), recorded at creation so the customer never enters anything.
+      p_customer_wallet_address: claimable ? (customerWalletAddress ?? null) : null,
+      p_claim_method: claimable && customerWalletAddress ? "same_wallet" : null,
+      p_backup_email: claimable ? (backupEmail ?? null) : null,
     },
   );
 
@@ -177,16 +196,17 @@ export async function recordPurchaseAndReward(params: {
       ok: false,
       httpStatus: isDuplicate ? 409 : 500,
       error: isDuplicate ? "This purchase has already been claimed." : message,
+      duplicate: isDuplicate,
     };
   }
 
-  // --- Step 9: the claim reference the SDK turns into a link ---------------
+  // --- Step 9: the reward reference the notification links to --------------
   return {
     ok: true,
     reward_event_id: eventId as string,
-    claim_url: claimable ? buildClaimUrl(eventId as string) : null,
     status: claimable ? "pending" : "rewards_disabled",
     reward_asset: settings.reward_asset,
+    asset_name: asset.display_name,
     reward_asset_ui_amount: rewardAssetUiAmount ?? "0",
     reward_usdc_ui_value: rewardUsdcUi ?? "0",
   };

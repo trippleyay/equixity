@@ -120,18 +120,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     externalOrderId: null,
     purchaseUsdcUnits: verification.amountUsdcUnits,
     purchaseCents: null,
+    // The wallet that paid IS the destination (reward-delivery spec section
+    // 2: crypto delivers to the same wallet, no customer entry anywhere).
+    customerWalletAddress: verification.payingWallet,
   });
 
   if (!result.ok) {
     return corsJson({ error: result.error }, result.httpStatus);
   }
 
-  // What the SDK displays and links to (spec section 4 step 9). The SDK itself
-  // calculates nothing.
+  // What the SDK shows (spec section 4 step 9). The SDK itself calculates
+  // nothing. rewardEventId links to the hosted reward page.
   return corsJson({
-    claimUrl: result.claim_url,
+    rewardEventId: result.reward_event_id,
     status: result.status,
     rewardAsset: result.reward_asset,
+    assetName: result.asset_name,
     rewardAmount: result.reward_asset_ui_amount,
     rewardUsdcValue: result.reward_usdc_ui_value,
   });

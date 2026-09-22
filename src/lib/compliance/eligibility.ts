@@ -22,12 +22,14 @@ import { evaluateGeoGate, detectGeo } from "@/lib/compliance/geo";
  * corrupt reporting and any future audit, so they are never merged anywhere in
  * the code or the data.
  *
- * SEQUENCING (deliberate, and an improvement on a literal reading of 6a):
- * merely LOADING the claim page records the detected country but never changes
- * status. Only an actual claim submit can set `ineligible`, and it re-checks geo
- * fresh at that moment. Otherwise a stray VPN blip or a flaky corporate proxy
- * on a page view could permanently poison a legitimate claim — and since
- * `ineligible` is terminal, "permanently" is literal.
+ * SEQUENCING (reward-delivery spec section 4 step 2): the hosted reward page's
+ * status reads record the detected country and a blocked streak, but the
+ * TERMINAL 'ineligible' is persisted only after two independently confirmed
+ * blocked reads on DIFFERENT page loads (a refresh re-checks; a repeat inside
+ * one load does not). A single VPN blip must never permanently poison a
+ * legitimate claim — and since 'ineligible' is terminal, "permanently" is
+ * literal. The confirm call ALWAYS re-checks geo fresh at the moment of
+ * delivery, whatever the status read said.
  */
 
 export type EligibilityInput = {
@@ -72,7 +74,7 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
       eligible: false,
       country: geo.country,
       reason:
-        "You must confirm that you are not a U.S. person and are not located in a restricted jurisdiction.",
+        "You must confirm the attestation before this reward can be delivered.",
     };
   }
 
@@ -81,19 +83,6 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
     country: geo.country,
     unknownCountry: geo.unknownCountry,
   };
-}
-
-/** Records the country seen on a page LOAD without changing claim status. */
-export async function recordClaimPageCountry(
-  claimId: string,
-  request: Request,
-): Promise<void> {
-  const detection = detectGeo(request);
-  const service = getServiceClient();
-  await service.rpc("set_claim_attempt_country", {
-    p_claim_id: claimId,
-    p_detected_country_code: detection.country,
-  });
 }
 
 /** Marks a claim ineligible — terminal, and touches no balance at all. */

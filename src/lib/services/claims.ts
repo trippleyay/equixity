@@ -1,37 +1,16 @@
 import { getServiceClient } from "@/lib/supabase/service";
 
 /**
- * Claim reads (spec sections 5, 6, 7).
+ * Claim reads for the DELIVERY path (spec sections 5, 6, 7).
  *
  * SERVER-ONLY, service-role: `reward_claims` is RLS-protected with merchant
- * policies only, and the public claim page reads exactly ONE row by its
- * unguessable UUID. That keeps the public surface to a single exact-id lookup
- * (spec section 7: "don't put anything in the URL or response beyond what's
- * needed to display and act on that one claim") instead of exposing an
- * enumerable table to the internet.
+ * policies only, so every read here is an exact-id lookup with the service
+ * client and no table is ever enumerable from the internet.
+ *
+ * The customer-facing read (one reward, by its unguessable UUID, for the hosted
+ * reward page) lives in services/reward-delivery.ts — the old claim-page reader
+ * that used to be here was deleted along with /claim/[rewardEventId].
  */
-
-export type ClaimView = {
-  claim_id: string;
-  reward_event_id: string;
-  status: "unclaimed" | "claiming" | "delivered" | "failed" | "ineligible";
-  claim_method: string | null;
-  customer_wallet_address: string | null;
-  swap_transaction_signature: string | null;
-  failure_reason: string | null;
-  detected_country_code: string | null;
-  merchant_id: string;
-  reward_asset: string;
-  reward_amount_units: string | null;
-  reward_usdc_units: string | null;
-  /** 0 once the claim is no longer 'unclaimed' — one claim per purchase. */
-  claimable_balance_units: string;
-  merchant_name: string;
-  asset_display_name: string | null;
-  asset_logo_url: string | null;
-  asset_decimals: number | null;
-  asset_mint: string | null;
-};
 
 type EmbeddedAsset = {
   display_name: string;
@@ -49,75 +28,13 @@ type EmbeddedEvent = {
   reward_assets: EmbeddedAsset | EmbeddedAsset[] | null;
 };
 
-function first<T>(value: T | T[] | null | undefined): T | null {
+export function first<T>(value: T | T[] | null | undefined): T | null {
   if (value === null || value === undefined) return null;
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * One claim, by the UUID that acts as its access control. Returns null when the
- * id is unknown, so the page can 404 rather than leaking whether it ever existed.
- */
-export async function getClaimForClaimPage(
-  rewardEventId: string,
-): Promise<ClaimView | null> {
-  if (!UUID_RE.test(rewardEventId)) return null;
-
-  const service = getServiceClient();
-  const { data } = await service
-    .from("reward_claims")
-    .select(
-      "id, reward_event_id, status, claim_method, customer_wallet_address, swap_transaction_signature, failure_reason, detected_country_code, " +
-        "reward_events(merchant_id, reward_asset, reward_amount_units::text, reward_usdc_units::text, merchants(name), reward_assets(display_name, logo_url, decimals, mint_address))",
-    )
-    .eq("reward_event_id", rewardEventId)
-    .maybeSingle();
-
-  if (!data) return null;
-  const row = data as unknown as {
-    id: string;
-    reward_event_id: string;
-    status: ClaimView["status"];
-    claim_method: string | null;
-    customer_wallet_address: string | null;
-    swap_transaction_signature: string | null;
-    failure_reason: string | null;
-    detected_country_code: string | null;
-    reward_events: EmbeddedEvent | EmbeddedEvent[] | null;
-  };
-
-  const event = first(row.reward_events);
-  if (!event) return null;
-  const asset = first(event.reward_assets);
-  const merchant = first(event.merchants);
-
-  return {
-    claim_id: row.id,
-    reward_event_id: row.reward_event_id,
-    status: row.status,
-    claim_method: row.claim_method,
-    customer_wallet_address: row.customer_wallet_address,
-    swap_transaction_signature: row.swap_transaction_signature,
-    failure_reason: row.failure_reason,
-    detected_country_code: row.detected_country_code,
-    merchant_id: event.merchant_id,
-    reward_asset: event.reward_asset ?? "",
-    reward_amount_units: event.reward_amount_units,
-    reward_usdc_units: event.reward_usdc_units,
-    // The reward's USDC value is what gets reserved and swapped. Reporting 0
-    // once the claim is no longer 'unclaimed' is what makes a claim one-shot.
-    claimable_balance_units:
-      row.status === "unclaimed" ? (event.reward_usdc_units ?? "0") : "0",
-    merchant_name: merchant?.name ?? "this merchant",
-    asset_display_name: asset?.display_name ?? null,
-    asset_logo_url: asset?.logo_url ?? null,
-    asset_decimals: asset?.decimals ?? null,
-    asset_mint: asset?.mint_address ?? null,
-  };
-}
 
 export type ClaimableRewardForExecution = {
   claim_id: string;

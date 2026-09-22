@@ -5,9 +5,11 @@ import {
   getSettings,
 } from "@/lib/services/merchant";
 import { getApiKeyStatus } from "@/lib/services/api-keys";
+import { getWebhookSecretStatus } from "@/lib/services/stripe-webhook-secret";
 import { createClient } from "@/lib/supabase/server";
 import { CopyButton } from "@/components/CopyButton";
 import { ApiKeyPanel } from "@/components/ApiKeyPanel";
+import { FiatWebhookPanel } from "@/components/FiatWebhookPanel";
 import { ReceivingWalletForm } from "@/components/ReceivingWalletForm";
 import { env } from "@/lib/env";
 
@@ -28,7 +30,9 @@ export default async function SettingsPage() {
   const apiKey = await getApiKeyStatus(merchant.id);
   const settings = await getSettings(merchant.id);
   const snippet = getSdkSnippet(merchant.public_id);
+  const webhookSecret = await getWebhookSecretStatus(merchant.id);
   const appBase = (env.nextPublicAppUrl || "https://equixity.vercel.app").replace(/\/+$/, "");
+  const webhookUrl = `${appBase}/api/public/webhooks/stripe/${merchant.public_id}`;
 
   return (
     <div>
@@ -76,6 +80,14 @@ export default async function SettingsPage() {
       </p>
 
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
+      <div className="min-w-0">
+      <FiatWebhookPanel
+        webhookUrl={webhookUrl}
+        initialConfigured={webhookSecret.configured}
+        initialUpdatedAt={webhookSecret.updatedAt}
+      />
+      </div>
+
       <div className="min-w-0">
       <ApiKeyPanel
         initialHasKey={apiKey.has_key}

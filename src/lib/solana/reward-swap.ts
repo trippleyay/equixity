@@ -184,10 +184,12 @@ async function loadLookupTables(
  * would make it possible to forget the check elsewhere. The gate lives in
  * lib/compliance/eligibility.ts and the claim route runs it first.
  */
+export type ClaimMethod = "same_wallet" | "pasted_address" | "privy_embedded";
+
 export async function executeRewardClaim(params: {
   claimId: string;
   customerWalletAddress: string;
-  claimMethod: "wallet_connect" | "privy_embedded";
+  claimMethod: ClaimMethod;
   detectedCountryCode: string | null;
 }): Promise<RewardClaimOutcome> {
   const { claimId, customerWalletAddress, claimMethod, detectedCountryCode } = params;

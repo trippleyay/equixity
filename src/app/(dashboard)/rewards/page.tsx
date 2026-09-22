@@ -1,15 +1,13 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
 import { getSettings, listAssets } from "@/lib/services/merchant";
 import { RewardsForm } from "@/components/RewardsForm";
-import { getRecentClaimAssets } from "@/lib/services/claim-assets";
 
 export default async function RewardsPage() {
   const { merchant } = await requireDashboardMerchant();
   const settings = await getSettings(merchant.id);
   const fallback = await listAssets();
-  // One shape for the shared table (spec section 1 requires the same component
-  // on the merchant Rewards view and the customer claim page).
-  const catalog = await getRecentClaimAssets();
+  // One shape for the shared table (spec section 1 requires the reuse).
+  const catalog = await listAssets();
   const assets =
     catalog.length > 0
       ? catalog

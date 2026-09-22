@@ -1,0 +1,370 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePrivy, useIdentityToken } from "@privy-io/react-auth";
+
+/**
+ * The hosted reward flow (reward-delivery spec sections 3a, 4).
+ *
+ * Runs as ordinary React on /reward/[rewardEventId] under Equixity's own
+ * domain. Geo is checked fresh on load and AGAIN on confirm; the attestation
+ * is the single checkbox plus the legal line; fiat customers either paste a
+ * wallet address (validated like the withdrawal destination) or use Privy to
+ * set one up. Crypto customers never enter anything — the reward goes to the
+ * wallet that paid.
+ *
+ * All copy is fixed wording; interpolated values pass through `clean` so no
+ * en/em dash can ever appear in what the customer reads.
+ */
+
+// The attestation sentence itself is BUILT SERVER-SIDE (restricted-countries.ts
+// `rewardAttestationText`) and passed in as a prop, so the jurisdiction list the
+// customer reads is literally the list the geo gate enforces. Nothing about the
+// legal wording lives in this client component.
+function clean(value: string | null | undefined): string {
+  return String(value ?? "").replace(/[\u2013\u2014]/g, "-");
+}
+
+type Display = { amountUsd: string | null; assetName: string | null };
+
+type StatusState =
+  | { kind: "loading" }
+  | ({ kind: "blocked" } & Display)
+  | ({
+      kind: "ready";
+      needsWallet: boolean;
+    } & Display)
+  | ({ kind: "delivered" } & Display)
+  | { kind: "failed"; reason: string | null }
+  | { kind: "error" };
+
+const RETRY_MESSAGE =
+  "Something went wrong on our end and this didn't go through. " +
+  "Nothing was charged against the reward balance - try refreshing in a minute.";
+
+/**
+ * "Apple Inc." -> "Apple Inc. stock", mirroring the notification badge, so both
+ * surfaces name the reward the same way. Already-suffixed names are left alone.
+ */
+function assetLabelOf(name: string | null | undefined): string {
+  const cleaned = clean(name);
+  if (!cleaned) return "stock";
+  return /stock/i.test(cleaned) ? cleaned : `${cleaned} stock`;
+}
+
+/** "$2.40" when the backend reported an amount, null when it did not. */
+function amountLabelOf(amountUsd: string | null | undefined): string | null {
+  const cleaned = clean(amountUsd);
+  return cleaned ? `$${cleaned}` : null;
+}
+
+export function RewardClaimPanel({
+  rewardEventId,
+  attestationText,
+}: {
+  rewardEventId: string;
+  /** Exact approved attestation sentence, server-derived. */
+  attestationText: string;
+}) {
+  const { login } = usePrivy();
+  const { identityToken } = useIdentityToken();
+
+  const [state, setState] = useState<StatusState>({ kind: "loading" });
+  const [attested, setAttested] = useState(false);
+  const [walletInput, setWalletInput] = useState("");
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [privyResolved, setPrivyResolved] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ message: string } | null>(null);
+  // Identifies THIS page load for the two-strike geo rule: a refresh makes a
+  // fresh id, so only distinct loads can advance the streak.
+  const viewIdRef = useRef(
+    (typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + "-" + Math.random().toString(36).slice(2)
+    ).slice(0, 64),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({
+      rewardEventId,
+      view: viewIdRef.current,
+    });
+    fetch(`/api/public/reward-status?${params.toString()}`)
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(String(r.status))),
+      )
+      .then((json) => {
+        if (cancelled) return;
+        // Amount and asset travel with every state so the approved copy can
+        // name them; null just means the backend did not report one.
+        const display = {
+          amountUsd: json.amountUsd ? clean(json.amountUsd) : null,
+          assetName: json.assetName ? clean(json.assetName) : null,
+        };
+        if (json.status === "blocked") setState({ kind: "blocked", ...display });
+        else if (json.status === "delivered")
+          setState({ kind: "delivered", ...display });
+        else if (json.status === "failed")
+          setState({ kind: "failed", reason: json.reason ?? null });
+        else if (json.status === "ready")
+          setState({
+            kind: "ready",
+            ...display,
+            needsWallet: Boolean(json.needsWallet),
+          });
+        else setState({ kind: "error" });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ kind: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rewardEventId]);
+
+  // Privy: once signed in, resolve the Solana address SERVER-SIDE from the
+  // identity token. The browser is never the trusted source for the address.
+  useEffect(() => {
+    if (!identityToken || privyResolved) return;
+    fetch("/api/public/privy-wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: identityToken }),
+    })
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error("verify failed")),
+      )
+      .then((json) => {
+        if (json?.address) {
+          setPrivyResolved(json.address);
+          setWalletError(null);
+        }
+      })
+      .catch(() =>
+        setWalletError(
+          "We could not verify your sign-in. Please try the email option again.",
+        ),
+      );
+  }, [identityToken, privyResolved]);
+
+  const walletValidationError = useCallback(
+    (value: string): string | null => {
+      const trimmed = value.trim();
+      if (!trimmed) return "Enter your wallet address to receive the reward.";
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) {
+        return "That does not look like a Solana wallet address. Paste the full address.";
+      }
+      return null;
+    },
+    [],
+  );
+
+  const confirm = useCallback(() => {
+    if (state.kind !== "ready") return;
+
+    const display = { amountUsd: state.amountUsd, assetName: state.assetName };
+
+    let walletAddress: string | null = null;
+    let claimMethod: string | null = null;
+    if (state.needsWallet) {
+      if (privyResolved) {
+        walletAddress = privyResolved;
+        claimMethod = "privy_embedded";
+      } else {
+        const problem = walletValidationError(walletInput);
+        if (problem) {
+          setWalletError(problem);
+          return;
+        }
+        walletAddress = walletInput.trim();
+        claimMethod = "pasted_address";
+      }
+    }
+    if (!attested) {
+      setWalletError("Please tick the confirmation box first.");
+      return;
+    }
+
+    setSubmitting(true);
+    setWalletError(null);
+    fetch("/api/public/reward-confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rewardEventId,
+        walletAddress: walletAddress ?? undefined,
+        claimMethod: claimMethod ?? undefined,
+        attestationAccepted: attested,
+        view: viewIdRef.current,
+      }),
+    })
+      .then(async (r) => {
+        const json = await r.json().catch(() => ({}));
+        if (r.ok && json.status === "delivered") {
+          setState({ kind: "delivered", ...display });
+          return;
+        }
+        if (r.status === 403 && json.status === "blocked") {
+          setState({ kind: "blocked", ...display });
+          return;
+        }
+        // A transient delivery failure is retryable; nothing was lost.
+        setResult({
+          message: clean(json.reason ?? json.error ?? RETRY_MESSAGE),
+        });
+      })
+      .catch(() => setResult({ message: RETRY_MESSAGE }))
+      .finally(() => setSubmitting(false));
+  }, [state, attested, walletInput, privyResolved, walletValidationError, rewardEventId]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="rounded-2xl border border-ink/5 bg-white p-6 text-sm text-slate shadow-soft">
+        Checking your reward…
+      </div>
+    );
+  }
+
+  if (state.kind === "blocked") {
+    const amount = amountLabelOf(state.amountUsd);
+    const asset = assetLabelOf(state.assetName);
+    return (
+      <div className="rounded-2xl border border-ink/5 bg-white p-6 shadow-soft">
+        <p className="text-[0.95rem] leading-relaxed text-ink">
+          {amount
+            ? `You earned ${amount} of ${asset} for this purchase, but`
+            : "You earned a reward for this purchase, but"}{" "}
+          we can&apos;t deliver stock rewards to your region right now. If you
+          think this is a mistake,{" "}
+          <a
+            href="/contact"
+            className="font-medium text-equixity underline underline-offset-2 hover:opacity-80"
+          >
+            reach out
+          </a>
+          .
+        </p>
+      </div>
+    );
+  }
+
+  if (state.kind === "delivered") {
+    const amount = amountLabelOf(state.amountUsd);
+    const asset = assetLabelOf(state.assetName);
+    return (
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-soft">
+        <p className="font-display text-lg font-medium text-ink">
+          {amount ? `Done. ${amount} of ${asset} is yours.` : "Done. Your reward is yours."}
+        </p>
+      </div>
+    );
+  }
+
+  if (state.kind === "failed") {
+    return (
+      <div className="rounded-2xl border border-ink/5 bg-white p-6 shadow-soft">
+        <p className="text-sm text-ink">
+          This reward could not be delivered
+          {state.reason ? ` (${clean(state.reason)})` : ""}. Nothing was charged
+          against the reward balance.{" "}
+          <a href="/contact" className="font-medium text-equixity underline">
+            Reach out
+          </a>{" "}
+          if this keeps happening.
+        </p>
+      </div>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <div className="rounded-2xl border border-ink/5 bg-white p-6 shadow-soft">
+        <p className="text-sm text-ink">{RETRY_MESSAGE}</p>
+      </div>
+    );
+  }
+
+  // ---- ready ----------------------------------------------------------------
+  const amountLabel = amountLabelOf(state.amountUsd);
+  const assetLabel = assetLabelOf(state.assetName);
+  const earned = amountLabel ? `${amountLabel} of ${assetLabel}` : "a reward";
+
+  return (
+    <div className="rounded-2xl border border-ink/5 bg-white p-6 shadow-soft">
+      <p className="font-display text-xl font-medium text-ink">
+        {state.needsWallet
+          ? `You earned ${earned} for this order. Choose how you'd like to receive it.`
+          : `You earned ${earned} for this order. It's going to the wallet you paid with. Confirm below and it's yours.`}
+      </p>
+
+      <label className="mt-5 flex items-start gap-3 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={attested}
+          onChange={(e) => setAttested(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-gray-300"
+        />
+        <span>
+          I confirm I&apos;m not located in a restricted region.
+          <span className="mt-1 block text-xs text-slate">
+            {attestationText}
+          </span>
+        </span>
+      </label>
+
+      {state.needsWallet && (
+        <div className="mt-5 space-y-3">
+          <button
+            type="button"
+            onClick={() => login()}
+            disabled={!attested || submitting}
+            className="w-full rounded-full bg-equixity px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Set one up with just my email
+          </button>
+          <div>
+            <label
+              htmlFor="eqx-wallet"
+              className="text-xs font-medium text-gray-500"
+            >
+              I already have a wallet: paste your wallet address
+            </label>
+            <input
+              id="eqx-wallet"
+              type="text"
+              value={privyResolved ?? walletInput}
+              onChange={(e) => {
+                setPrivyResolved(null);
+                setWalletInput(e.target.value);
+                setWalletError(null);
+              }}
+              placeholder="Paste your Solana wallet address"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={submitting}
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-white px-3 py-2 font-mono text-sm text-ink outline-none focus:border-equixity"
+            />
+          </div>
+        </div>
+      )}
+
+      {walletError && <p className="mt-3 text-sm text-red-600">{walletError}</p>}
+      {result && <p className="mt-3 text-sm text-ink">{result.message}</p>}
+
+      <button
+        type="button"
+        onClick={confirm}
+        disabled={
+          submitting ||
+          !attested ||
+          (state.needsWallet && !privyResolved && !walletInput.trim())
+        }
+        className="mt-5 w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {submitting ? "Delivering…" : "Confirm & Claim Reward"}
+      </button>
+    </div>
+  );
+}

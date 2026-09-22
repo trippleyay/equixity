@@ -25,7 +25,18 @@ import { FUNDING_COMMITMENT, USDC_MINT } from "@/lib/solana/constants";
  */
 
 export type PurchaseVerification =
-  | { ok: true; amountUsdcUnits: bigint; receivingAta: string }
+  | {
+      ok: true;
+      amountUsdcUnits: bigint;
+      receivingAta: string;
+      /**
+       * The wallet that paid: the fee payer of the verified transaction
+       * (account key 0, always the primary signer). This is what the crypto
+       * reward is delivered to — "same wallet that paid" — and it is read
+       * from the transaction, never from the request body.
+       */
+      payingWallet: string | null;
+    }
   | { ok: false; reason: string };
 
 export async function verifyUsdcPurchaseToMerchant(params: {
@@ -82,5 +93,13 @@ export async function verifyUsdcPurchaseToMerchant(params: {
     };
   }
 
-  return { ok: true, amountUsdcUnits: delta, receivingAta: ata.toBase58() };
+  return {
+    ok: true,
+    amountUsdcUnits: delta,
+    receivingAta: ata.toBase58(),
+    // Parsed account keys are ordered with the fee payer (primary signer)
+    // first; that wallet is the one that paid.
+    payingWallet:
+      parsed.transaction.message.accountKeys?.[0]?.pubkey.toString() ?? null,
+  };
 }

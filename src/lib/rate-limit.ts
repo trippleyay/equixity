@@ -96,25 +96,33 @@ export function checkCardRateLimit(apiKeyHash: string): Promise<RateLimitResult>
   return check(cardByKey, apiKeyHash);
 }
 
-/** Per-IP limit for /api/public/claim — it moves real money (spec section 7). */
-const claimByIp = makeLimiter("equixity:rl:claim:ip", 20, "60 s");
-
-export function checkClaimRateLimit(ip: string): Promise<RateLimitResult> {
-  return check(claimByIp, ip);
-}
-
-/** Per-IP limit for claim page-view pings (read-only, but still unbounded otherwise). */
-const claimViewByIp = makeLimiter("equixity:rl:claimview:ip", 60, "60 s");
-
-export function checkClaimViewRateLimit(ip: string): Promise<RateLimitResult> {
-  return check(claimViewByIp, ip);
-}
-
 /** Per-IP limit for Privy token verification (abuse gate, not money-moving). */
 const privyVerifyByIp = makeLimiter("equixity:rl:privy:ip", 20, "60 s");
 
 export function checkPrivyVerifyRateLimit(ip: string): Promise<RateLimitResult> {
   return check(privyVerifyByIp, ip);
+}
+
+/**
+ * Public reward-delivery endpoints (reward-delivery spec sections 3a, 4, 7).
+ * reward-exists is the notification's poll (fiat, every couple of seconds, so
+ * the loosest); reward-status is read by the hosted page; reward-confirm moves
+ * real money and gets the tightest of the three.
+ */
+const rewardExistsByIp = makeLimiter("equixity:rl:rewexists:ip", 120, "60 s");
+const rewardStatusByIp = makeLimiter("equixity:rl:rewstatus:ip", 60, "60 s");
+const rewardConfirmByIp = makeLimiter("equixity:rl:rewconfirm:ip", 10, "60 s");
+
+export function checkRewardExistsRateLimit(ip: string): Promise<RateLimitResult> {
+  return check(rewardExistsByIp, ip);
+}
+
+export function checkRewardStatusRateLimit(ip: string): Promise<RateLimitResult> {
+  return check(rewardStatusByIp, ip);
+}
+
+export function checkRewardConfirmRateLimit(ip: string): Promise<RateLimitResult> {
+  return check(rewardConfirmByIp, ip);
 }
 
 /**

@@ -123,6 +123,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     externalOrderId,
     purchaseUsdcUnits,
     purchaseCents,
+    // Fiat: no wallet is known here — the customer chooses on the hosted
+    // reward page. backup_email stays null in Path B (the merchant's own
+    // backend never hands us one).
+    customerWalletAddress: null,
+    backupEmail: null,
   });
 
   if (!result.ok) {
@@ -130,9 +135,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   return json({
-    claimUrl: result.claim_url,
+    rewardEventId: result.reward_event_id,
     status: result.status,
     rewardAsset: result.reward_asset,
+    assetName: result.asset_name,
     rewardAmount: result.reward_asset_ui_amount,
     rewardUsdcValue: result.reward_usdc_ui_value,
   });
