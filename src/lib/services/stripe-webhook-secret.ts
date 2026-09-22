@@ -7,12 +7,18 @@ import { encryptPayload, decryptPayload } from "@/lib/crypto/deposit-keys";
  * SERVER-ONLY. Each merchant's webhook secret is independent (never shared),
  * encrypted at rest with AES-256-GCM using the same key material as the
  * deposit private keys, and treated with the same care (spec section 7).
- * The migration additionally column-revokes SELECT from the authenticated
- * role, so even a merchant's own session can never read the ciphertext back.
+ * The ciphertext lives in `merchant_stripe_webhooks`, a table with RLS ENABLED
+ * AND ZERO POLICIES, exactly like merchant_deposit_accounts. That is
+ * deliberate: a column-level REVOKE cannot carve a hole out of Supabase's
+ * table-level GRANT to the authenticated role, so a merchant's own session
+ * could still have read the column via PostgREST. With no policy at all, only
+ * the service role can touch the table.
  *
  * The plaintext is returned ONLY to the webhook signature verifier, and is
  * never included in any API response.
  */
+
+const TABLE = "merchant_stripe_webhooks";
 
 export type StoredWebhookSecret = {
   configured: boolean;
@@ -24,14 +30,14 @@ export async function getWebhookSecretStatus(
 ): Promise<StoredWebhookSecret> {
   const service = getServiceClient();
   const { data } = await service
-    .from("merchant_settings")
-    .select("stripe_webhook_secret_updated_at, stripe_webhook_secret")
+    .from(TABLE)
+    .select("webhook_secret, updated_at")
     .eq("merchant_id", merchantId)
     .maybeSingle();
   return {
     // Presence only — the ciphertext itself never leaves this module.
-    configured: Boolean(data?.stripe_webhook_secret),
-    updatedAt: data?.stripe_webhook_secret_updated_at ?? null,
+    configured: Boolean(data?.webhook_secret),
+    updatedAt: data?.updated_at ?? null,
   };
 }
 
@@ -44,12 +50,12 @@ export async function loadDecryptedWebhookSecret(
 ): Promise<{ configured: boolean; secret: string | null }> {
   const service = getServiceClient();
   const { data } = await service
-    .from("merchant_settings")
-    .select("stripe_webhook_secret")
+    .from(TABLE)
+    .select("webhook_secret")
     .eq("merchant_id", merchantId)
     .maybeSingle();
 
-  const ciphertext = data?.stripe_webhook_secret ?? null;
+  const ciphertext = data?.webhook_secret ?? null;
   if (!ciphertext) return { configured: false, secret: null };
   try {
     return { configured: true, secret: decryptPayload(ciphertext) };
@@ -67,23 +73,23 @@ export async function saveWebhookSecret(
 ): Promise<void> {
   const service = getServiceClient();
   const { error } = await service
-    .from("merchant_settings")
-    .update({
-      stripe_webhook_secret: encryptPayload(plaintextSecret),
-      stripe_webhook_secret_updated_at: new Date().toISOString(),
-    })
-    .eq("merchant_id", merchantId);
+    .from(TABLE)
+    .upsert(
+      {
+        merchant_id: merchantId,
+        webhook_secret: encryptPayload(plaintextSecret),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "merchant_id" },
+    );
   if (error) throw new Error(`Could not save the webhook secret: ${error.message}`);
 }
 
 export async function clearWebhookSecret(merchantId: string): Promise<void> {
   const service = getServiceClient();
   const { error } = await service
-    .from("merchant_settings")
-    .update({
-      stripe_webhook_secret: null,
-      stripe_webhook_secret_updated_at: null,
-    })
+    .from(TABLE)
+    .delete()
     .eq("merchant_id", merchantId);
   if (error) throw new Error(`Could not clear the webhook secret: ${error.message}`);
 }

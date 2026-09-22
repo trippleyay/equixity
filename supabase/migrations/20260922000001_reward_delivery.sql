@@ -13,15 +13,26 @@
 -- ============================================================
 
 -- --- Path A: per-merchant webhook credentials -------------------------------
-alter table merchant_settings
-  add column if not exists stripe_webhook_secret text;
-alter table merchant_settings
-  add column if not exists stripe_webhook_secret_updated_at timestamptz;
-
--- The stored value is AES-256-GCM ciphertext, but a merchant's own session can
--- read their row via merchant_settings_select_own. The secret must never leave
--- the server, so the column is invisible to the authenticated role entirely.
-revoke select (stripe_webhook_secret) on merchant_settings from authenticated;
+-- The signing secret lives in its OWN table with RLS ENABLED AND ZERO POLICIES,
+-- exactly like merchant_deposit_accounts (whose encrypted_private_key gets the
+-- same treatment).
+--
+-- A column-level REVOKE on merchant_settings was the obvious first approach and
+-- is deliberately NOT used. Supabase grants table-level privileges to the
+-- authenticated role by default, and in PostgreSQL a column-level REVOKE cannot
+-- carve a hole out of a table-level GRANT: the secret would have remained
+-- readable by the merchant's own session via PostgREST
+-- (select=stripe_webhook_secret), even though a "revoke" appeared to have run.
+-- With RLS enabled and no policy, every row is denied to authenticated/anon
+-- regardless of the GRANT, so only the service role can read the ciphertext.
+create table if not exists merchant_stripe_webhooks (
+  merchant_id uuid primary key references merchants(id) on delete cascade,
+  -- AES-256-GCM ciphertext (same key material as deposit keys). Never plaintext.
+  webhook_secret text not null,
+  updated_at timestamptz not null default now()
+);
+alter table merchant_stripe_webhooks enable row level security;
+-- Intentionally NO policies here. See merchant_deposit_accounts.
 
 -- --- reward_claims ----------------------------------------------------------
 -- 'pasted_address' is the fiat "I already have a wallet" path: the customer
