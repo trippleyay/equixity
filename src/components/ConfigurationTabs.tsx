@@ -37,7 +37,7 @@ const TITLES: Record<TabId, string> = {
 };
 
 const BLURBS: Record<TabId, string> = {
-  stripe: "Card payments through Stripe create rewards",
+  stripe: "Card payments through Stripe create rewards.",
   flutterwave: "Card, bank and mobile money payments through Flutterwave create rewards.",
   api: "For a custom checkout or a processor we do not support yet. Your backend reports each completed order with this key.",
 };

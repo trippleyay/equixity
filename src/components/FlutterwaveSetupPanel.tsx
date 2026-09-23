@@ -17,9 +17,11 @@ import {
  * they paste it into Flutterwave, and Next saves it here. There is no separate
  * save button because there is nothing for them to decide at that point.
  *
- * A fresh hash is generated on every visit, so if their hash ever changed in
- * Flutterwave they always have a new value to paste. Done on the last step is
- * what marks the path finished, which is what flips the tab chip to "Set up".
+ * The hash is a credential, so once one is stored this step says so and keeps
+ * the two controls that matter: make a new hash, or remove the saved one. A new
+ * hash is generated whenever it is needed, so there is always a value to paste.
+ * Done on the last step is what marks the path finished, which is what flips the
+ * tab chip to "Set up".
  */
 
 const TOTAL_STEPS = 3;
@@ -45,6 +47,7 @@ function generateSecretHash(): string {
 export function FlutterwaveSetupPanel({
   webhookUrl,
   snippet,
+  initialStatus,
   onStatusChange,
 }: {
   webhookUrl: string;
@@ -54,7 +57,10 @@ export function FlutterwaveSetupPanel({
   onStatusChange: (status: WebhookStatus) => void;
 }) {
   const [step, setStep] = useState(1);
-  const [secretHash] = useState(() => generateSecretHash());
+  const [configured, setConfigured] = useState(initialStatus.configured);
+  const [secretHash, setSecretHash] = useState(() => generateSecretHash());
+  const [replacing, setReplacing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -79,6 +85,8 @@ export function FlutterwaveSetupPanel({
         setError(body.error ?? "Could not save the secret hash. Please try again.");
         return false;
       }
+      setConfigured(true);
+      setReplacing(false);
       onStatusChange({
         configured: true,
         updatedAt: body.updatedAt ?? new Date().toISOString(),
@@ -93,7 +101,50 @@ export function FlutterwaveSetupPanel({
     }
   }
 
+  /** A new value to paste, without touching what is stored until Next saves it. */
+  function startReplacing() {
+    setSecretHash(generateSecretHash());
+    setReplacing(true);
+    setError(null);
+  }
+
+  /** Removes the stored hash, so the path can be set up again from scratch. */
+  async function removeSecretHash() {
+    if (
+      !window.confirm(
+        "Remove the saved secret hash? Flutterwave payments stop creating rewards until you save a new one.",
+      )
+    ) {
+      return;
+    }
+    setRemoving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave", {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "Could not remove the secret hash. Please try again.");
+        return;
+      }
+      setConfigured(false);
+      setReplacing(false);
+      setSecretHash(generateSecretHash());
+      onStatusChange({ configured: false, updatedAt: null, completedAt: null });
+    } catch {
+      setError("Could not remove the secret hash. Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   async function leaveStepTwo() {
+    // Keeping the stored hash: there is nothing new to save, just move on.
+    if (!showHash) {
+      setStep(3);
+      return;
+    }
     if (await saveSecretHash()) setStep(3);
   }
 
@@ -129,6 +180,8 @@ export function FlutterwaveSetupPanel({
       setFinishing(false);
     }
   }
+
+  const showHash = !configured || replacing;
 
   if (finished) {
     return (
@@ -177,11 +230,45 @@ export function FlutterwaveSetupPanel({
 
       {step === 2 ? (
         <SetupStep title="Paste your secret hash">
-          <p className="mt-2 text-sm text-slate">
-            In the same Flutterwave webhook settings, paste this into the{" "}
-            <Strong>Secret hash</Strong> field and click Save there.
-          </p>
-          <CodeField value={secretHash} label="Copy secret hash" />
+          {showHash ? (
+            <>
+              <p className="mt-2 text-sm text-slate">
+                In the same Flutterwave webhook settings, paste this into the{" "}
+                <Strong>Secret hash</Strong> field and click Save there.
+              </p>
+              <CodeField value={secretHash} label="Copy secret hash" />
+              {replacing ? (
+                <button
+                  type="button"
+                  onClick={() => setReplacing(false)}
+                  className="mt-3 text-xs font-medium text-slate transition hover:text-ink"
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-slate">Secret hash already set.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  onClick={startReplacing}
+                  className="text-xs font-medium text-equixity underline-offset-2 transition hover:underline"
+                >
+                  Use a new secret hash
+                </button>
+                <button
+                  type="button"
+                  onClick={removeSecretHash}
+                  disabled={removing}
+                  className="text-xs font-medium text-slate underline-offset-2 transition hover:text-ink hover:underline disabled:opacity-50"
+                >
+                  {removing ? "Removing..." : "Remove the saved hash"}
+                </button>
+              </div>
+            </>
+          )}
         </SetupStep>
       ) : null}
 

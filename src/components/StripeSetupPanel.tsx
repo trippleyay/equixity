@@ -240,11 +240,6 @@ export function StripeSetupPanel({
                   ? "Saved. Your signing secret is stored securely."
                   : "Your signing secret is already saved."}
               </p>
-              <p className="mt-2 text-xs leading-5 text-slate">
-                Changed something in Stripe, or want to start this path over?
-                Paste a new secret above to replace it, or remove the saved one
-                and set the path up again.
-              </p>
               <button
                 type="button"
                 onClick={removeSecret}
@@ -285,8 +280,7 @@ export function StripeSetupPanel({
           <SuccessPageSnippet snippet={snippet} />
           <p className="mt-4 text-xs leading-5 text-slate">
             Only USD charges create a reward. Any other currency is refused
-            instead of converted. Press Done when you are finished, and we will
-            check that your signing secret is saved.
+            instead of converted.
           </p>
         </SetupStep>
       ) : null}
