@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
+import { SuccessPageSnippet } from "@/components/SuccessPageSnippet";
+import { SetupActions } from "@/components/SetupGuide";
 
 /**
  * Merchant API key management UI (spec section 4a), shown inside the Checkout
@@ -10,7 +12,7 @@ import { CopyButton } from "@/components/CopyButton";
  *
  * The plaintext key is shown EXACTLY ONCE, immediately after generation, and
  * the UI says so plainly. Afterwards only the last four characters are ever
- * available — the server stores only the hash, so there is nothing to reveal
+ * available. The server stores only the hash, so there is nothing to reveal
  * later. One key max per merchant; regenerate/delete take effect immediately.
  */
 
@@ -52,6 +54,8 @@ export function ApiKeyPanel({
   const [revealed, setRevealed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [finished, setFinished] = useState(false);
 
   async function generate() {
     if (
@@ -126,6 +130,59 @@ export function ApiKeyPanel({
     } catch {
       // Clipboard may be unavailable; the key is visible on screen regardless.
     }
+  }
+
+  /**
+   * Done: the key row is the source of truth for "set up", so this re-reads it
+   * from the server rather than trusting what is on screen, and refuses while no
+   * key exists.
+   */
+  async function done() {
+    setFinishing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/merchant/api-key");
+      const body = (await res.json().catch(() => ({}))) as {
+        has_key?: boolean;
+        last_four?: string | null;
+        created_at?: string | null;
+      };
+      if (!res.ok || !body.has_key) {
+        setError("No API key exists yet. Generate one first, then press Done.");
+        return;
+      }
+      const next: KeyState = {
+        hasKey: true,
+        lastFour: body.last_four ?? state.lastFour,
+        createdAt: body.created_at ?? state.createdAt,
+      };
+      setState(next);
+      onStatusChange?.(next);
+      setFinished(true);
+    } catch {
+      setError("Could not confirm the setup right now. Please try again.");
+    } finally {
+      setFinishing(false);
+    }
+  }
+
+  if (finished) {
+    return (
+      <div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-900">All set.</p>
+          <p className="mt-1 text-xs leading-5 text-emerald-800">
+            Completed orders you report with this key now create a reward for
+            your customers. Only USD purchases create a reward.
+          </p>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-slate">
+          Keep this snippet on the page customers land on after paying:
+        </p>
+        <SuccessPageSnippet snippet={snippet} />
+        <SetupActions onBack={() => setFinished(false)} backLabel="Review the setup" />
+      </div>
+    );
   }
 
   return (
@@ -219,10 +276,6 @@ export function ApiKeyPanel({
         </p>
       ) : null}
 
-      {error ? (
-        <p className="mt-2 rounded-2xl bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>
-      ) : null}
-
       <div className="mt-4 border-t border-gray-200 pt-3">
         <div className="flex items-center justify-between">
           <p className="text-xs font-medium text-gray-600">Reporting a completed order</p>
@@ -270,6 +323,14 @@ export function ApiKeyPanel({
           <code className="text-[11px]">{rewardPagePattern}</code> instead.
         </p>
       </div>
+
+      {error ? (
+        <p className="mt-3 rounded-2xl bg-red-50 px-4 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+
+      <SetupActions onNext={done} nextLabel="Done" nextBusy={finishing} />
     </div>
   );
 }

@@ -55,19 +55,24 @@ export function SetupStep({
 }
 
 /**
- * Back/Next footer. `onNext` is omitted on the last step, where there is nothing
- * left to advance to; Back is still there so the merchant can re-read a step.
+ * Back/Next/Done footer. `onNext` is omitted on a step with nothing after it,
+ * and `nextLabel="Done"` marks the explicit finish action (which the panels use
+ * to re-check the stored secret and close the guide out).
  */
 export function SetupActions({
   onBack,
+  backLabel = "← Back",
   onNext,
   nextLabel = "Next",
   nextDisabled = false,
+  nextBusy = false,
 }: {
   onBack?: () => void;
+  backLabel?: string;
   onNext?: () => void;
   nextLabel?: string;
   nextDisabled?: boolean;
+  nextBusy?: boolean;
 }) {
   return (
     <div className="mt-5 flex items-center justify-between gap-3 border-t border-ink/5 pt-4">
@@ -77,7 +82,7 @@ export function SetupActions({
           onClick={onBack}
           className="text-sm font-medium text-slate transition hover:text-ink"
         >
-          ← Back
+          {backLabel}
         </button>
       ) : (
         <span />
@@ -86,10 +91,10 @@ export function SetupActions({
         <button
           type="button"
           onClick={onNext}
-          disabled={nextDisabled}
+          disabled={nextDisabled || nextBusy}
           className="rounded-full bg-equixity px-5 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {nextLabel}
+          {nextBusy ? "Checking..." : nextLabel}
         </button>
       ) : null}
     </div>

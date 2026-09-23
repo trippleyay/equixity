@@ -17,6 +17,11 @@ import {
  * they paste it into Flutterwave, then paste the same shared snippet at the end.
  * Flutterwave is told to keep every event box ticked because we only act on
  * successful USD charges and acknowledge everything else.
+ *
+ * Step 2 stores the secret hash, which is what makes the webhook verifiable, so
+ * Next cannot be walked past without it. Done on the last step re-reads the
+ * stored hash from the server, refuses if nothing was stored, and on success
+ * marks the path set up and shows the finished view.
  */
 
 const TOTAL_STEPS = 3;
@@ -57,6 +62,8 @@ export function FlutterwaveSetupPanel({
   );
   const [replacing, setReplacing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [finished, setFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedNow, setSavedNow] = useState(false);
 
@@ -92,6 +99,33 @@ export function FlutterwaveSetupPanel({
     }
   }
 
+  /** Done: confirm against the stored hash, then close the guide out. */
+  async function done() {
+    setFinishing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave");
+      const body = (await res.json().catch(() => ({}))) as {
+        configured?: boolean;
+        updatedAt?: string | null;
+      };
+      if (!res.ok || !body.configured) {
+        setError(
+          "No secret hash is saved yet. Go back to step 2 and save the hash shown there.",
+        );
+        return;
+      }
+      setConfigured(true);
+      setSavedNow(false);
+      setFinished(true);
+      onStatusChange({ configured: true, updatedAt: body.updatedAt ?? null });
+    } catch {
+      setError("Could not confirm the setup right now. Please try again.");
+    } finally {
+      setFinishing(false);
+    }
+  }
+
   function startReplacing() {
     setSecretHash(generateSecretHash());
     setReplacing(true);
@@ -101,6 +135,32 @@ export function FlutterwaveSetupPanel({
 
   const lastStep = step === TOTAL_STEPS;
   const showHash = !configured || replacing;
+
+  if (finished) {
+    return (
+      <div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-900">All set.</p>
+          <p className="mt-1 text-xs leading-5 text-emerald-800">
+            Flutterwave card payments now create a reward for your customers,
+            with nothing else to build. Only USD charges create a reward.
+          </p>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-slate">
+          Keep this snippet on the page Flutterwave sends customers to after they
+          pay:
+        </p>
+        <SuccessPageSnippet snippet={snippet} />
+        <SetupActions
+          onBack={() => {
+            setFinished(false);
+            setStep(TOTAL_STEPS);
+          }}
+          backLabel="Review the steps"
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -179,11 +239,6 @@ export function FlutterwaveSetupPanel({
               </button>
             </>
           )}
-          {error ? (
-            <p className="mt-2 rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </p>
-          ) : null}
         </SetupStep>
       ) : null}
 
@@ -194,24 +249,26 @@ export function FlutterwaveSetupPanel({
             the snippet once:
           </p>
           <SuccessPageSnippet snippet={snippet} />
-          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <p className="text-sm font-medium text-emerald-900">All set.</p>
-            <p className="mt-1 text-xs leading-5 text-emerald-800">
-              Flutterwave card payments now create a reward for your customers,
-              with nothing else to build.
-            </p>
-          </div>
           <p className="mt-4 text-xs leading-5 text-slate">
             Only USD charges create a reward. Any other currency is refused
-            instead of converted.
+            instead of converted. Press Done when you are finished, and we will
+            check that your secret hash is saved.
           </p>
         </SetupStep>
       ) : null}
 
+      {error ? (
+        <p className="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
+
       <SetupActions
         onBack={step > 1 ? () => setStep((s) => s - 1) : undefined}
-        onNext={lastStep ? undefined : () => setStep((s) => s + 1)}
+        onNext={lastStep ? done : () => setStep((s) => s + 1)}
+        nextLabel={lastStep ? "Done" : "Next"}
         nextDisabled={step === 2 && !configured}
+        nextBusy={finishing}
       />
     </div>
   );
