@@ -4,8 +4,8 @@ import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 
 /**
- * Merchant API key management UI (spec section 4a), shown in
- * Settings → Configuration as a table: created date, last four, status, and a
+ * Merchant API key management UI (spec section 4a), shown inside the Checkout
+ * API guide on Settings → Configuration: created date, last four, status, and a
  * Delete action that revokes the key server-side.
  *
  * The plaintext key is shown EXACTLY ONCE, immediately after generation, and
@@ -14,16 +14,16 @@ import { CopyButton } from "@/components/CopyButton";
  * later. One key max per merchant; regenerate/delete take effect immediately.
  */
 
-type KeyState = {
+export type KeyState = {
   hasKey: boolean;
   lastFour: string | null;
   createdAt: string | null;
 };
 
 function formatDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "Not set";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "Not set";
   return d.toLocaleString();
 }
 
@@ -32,11 +32,17 @@ export function ApiKeyPanel({
   initialLastFour,
   initialCreatedAt,
   baseUrl,
+  snippet,
+  rewardPagePattern,
+  onStatusChange,
 }: {
   initialHasKey: boolean;
   initialLastFour: string | null;
   initialCreatedAt: string | null;
   baseUrl: string;
+  snippet: string;
+  rewardPagePattern: string;
+  onStatusChange?: (status: KeyState) => void;
 }) {
   const [state, setState] = useState<KeyState>({
     hasKey: initialHasKey,
@@ -71,11 +77,13 @@ export function ApiKeyPanel({
         return;
       }
       setRevealed(body.api_key ?? null);
-      setState({
+      const next: KeyState = {
         hasKey: true,
         lastFour: body.last_four ?? null,
         createdAt: body.created_at ?? new Date().toISOString(),
-      });
+      };
+      setState(next);
+      onStatusChange?.(next);
     } catch {
       setError("Could not generate a key.");
     } finally {
@@ -101,7 +109,9 @@ export function ApiKeyPanel({
         return;
       }
       setRevealed(null);
-      setState({ hasKey: false, lastFour: null, createdAt: null });
+      const next: KeyState = { hasKey: false, lastFour: null, createdAt: null };
+      setState(next);
+      onStatusChange?.(next);
     } catch {
       setError("Could not delete the key.");
     } finally {
@@ -119,14 +129,7 @@ export function ApiKeyPanel({
   }
 
   return (
-    <div className="min-w-0 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
-      <h2 className="text-sm font-semibold text-ink">Fiat checkout API</h2>
-      <p className="mt-1 text-xs text-gray-500">
-        For merchants on Stripe, Shopify, or any card checkout: your backend calls
-        Equixity with this key to report completed orders. It is separate from your
-        dashboard login.
-      </p>
-
+    <div className="min-w-0">
       {revealed ? (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3">
           <p className="text-xs font-medium text-amber-900">
@@ -245,14 +248,26 @@ export function ApiKeyPanel({
       </div>
 
       <div className="mt-4 border-t border-gray-200 pt-3">
-        <p className="text-xs text-gray-500">
-          After the payment, send the customer to your thank-you page with{" "}
+        <p className="text-xs font-medium text-gray-600">
+          Showing the reward to the customer
+        </p>
+        <p className="mt-2 text-xs leading-5 text-gray-500">
+          Send the customer to your thank-you page with{" "}
           <code className="text-[11px]">?order_id=</code> set to the same
-          externalOrderId you posted here. The snippet under the Your success
-          page panel reads it from the address. Skipping the snippet entirely? The
-          complete-card response already includes a{" "}
-          <code className="text-[11px]">rewardEventId</code>, so you can send
-          the customer straight to the hosted reward page.
+          externalOrderId you posted here, and paste this snippet on that page
+          once:
+        </p>
+        <pre className="mt-2 min-w-0 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-[11px] leading-5">
+          <code>{snippet}</code>
+        </pre>
+        <div className="mt-2">
+          <CopyButton value={snippet} label="Copy snippet" />
+        </div>
+        <p className="mt-2 text-xs leading-5 text-gray-500">
+          Rather skip the snippet? The complete-card response already includes a{" "}
+          <code className="text-[11px]">rewardEventId</code>, so your backend can
+          send the customer straight to{" "}
+          <code className="text-[11px]">{rewardPagePattern}</code> instead.
         </p>
       </div>
     </div>

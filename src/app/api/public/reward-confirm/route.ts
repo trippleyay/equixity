@@ -170,7 +170,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return json(
       {
         error:
-          "We could not complete this claim right now. No reward was lost — it can be retried.",
+          "We could not complete this claim right now. No reward was lost, and it can be retried.",
       },
       500,
     );

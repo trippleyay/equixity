@@ -100,7 +100,7 @@ export default async function DevMonitor({
   return (
     <div style={{ fontFamily: "monospace", padding: 24, fontSize: 14 }}>
       <h1 style={{ fontSize: 16 }}>dev monitor</h1>
-      <p style={{ color: "#888" }}>internal — do not share this URL</p>
+      <p style={{ color: "#888" }}>internal, do not share this URL</p>
       <table cellPadding={6} style={{ borderCollapse: "collapse", marginTop: 12 }}>
         <tbody>
           {rows.map(([k, v, note]) => (

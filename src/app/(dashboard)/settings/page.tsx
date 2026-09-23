@@ -4,9 +4,7 @@ import { getApiKeyStatus } from "@/lib/services/api-keys";
 import { getWebhookSecretStatus } from "@/lib/services/merchant-webhook-secrets";
 import { createClient } from "@/lib/supabase/server";
 import { CopyButton } from "@/components/CopyButton";
-import { ApiKeyPanel } from "@/components/ApiKeyPanel";
-import { FiatWebhookPanel } from "@/components/FiatWebhookPanel";
-import { FlutterwaveSetupPanel } from "@/components/FlutterwaveSetupPanel";
+import { ConfigurationTabs } from "@/components/ConfigurationTabs";
 import { buildRewardPageUrl } from "@/lib/sdk/snippet";
 import { env } from "@/lib/env";
 
@@ -14,16 +12,18 @@ import { env } from "@/lib/env";
  * Settings = Account + Configuration (sidebar: "Settings").
  *
  * - Account: identity, merchant ID, deposit address, sign out.
- * - Configuration: each hosted payment webhook (Stripe, Flutterwave), the
- *   general API key for merchants with their own backend, and the ONE
- *   success-page snippet every path shares. There is no crypto section:
- *   Solana payments are dormant, and no snippet or setup is offered for them.
+ * - Configuration: three tabs, one per way in (Stripe, Flutterwave, and the
+ *   Checkout API for a merchant's own backend), with only the selected path on
+ *   screen. Each path is walked one step at a time instead of every instruction
+ *   being printed at once, and the ONE success-page snippet every path shares is
+ *   that path's last step. There is no crypto section: Solana payments are
+ *   dormant, and no snippet or setup is offered for them.
  */
 export default async function SettingsPage() {
   const { merchant } = await requireDashboardMerchant();
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  const email = data?.user?.email ?? "—";
+  const email = data?.user?.email ?? "Not set";
   const depositAddress = await getDepositAddress(merchant.id);
   const apiKey = await getApiKeyStatus(merchant.id);
   const snippet = getSdkSnippet(merchant.public_id);
@@ -79,64 +79,26 @@ export default async function SettingsPage() {
         distribution.
       </p>
 
-      <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
-        <div className="min-w-0">
-          <FiatWebhookPanel
-            webhookUrl={webhookUrl}
-            initialConfigured={stripeSecret.configured}
-            initialUpdatedAt={stripeSecret.updatedAt}
-          />
-        </div>
-
-        <div className="min-w-0">
-          <FlutterwaveSetupPanel
-            webhookUrl={flutterwaveWebhookUrl}
-            initialConfigured={flutterwaveSecret.configured}
-            initialUpdatedAt={flutterwaveSecret.updatedAt}
-          />
-        </div>
-
-        <div className="min-w-0">
-          <ApiKeyPanel
-            initialHasKey={apiKey.has_key}
-            initialLastFour={apiKey.last_four}
-            initialCreatedAt={apiKey.created_at}
-            baseUrl={appBase}
-          />
-        </div>
-
-        {/* The one snippet, shown once: every payment path uses this exact tag,
-            and each processor panel explains where its own reference comes
-            from. Full width so it reads as shared, not as a fourth processor. */}
-        <div className="min-w-0 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft lg:col-span-2">
-          <h2 className="text-sm font-semibold text-ink">Your success page</h2>
-          <p className="mt-1 text-xs text-gray-500">
-            One snippet for every payment method. Paste it once, at the bottom
-            of the page the customer lands on after paying. Nothing in it needs
-            filling in: the page address tells Equixity which order it was.
-          </p>
-          <pre className="mt-3 min-w-0 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-xs leading-5">
-            <code>{snippet}</code>
-          </pre>
-          <div className="mt-2">
-            <CopyButton value={snippet} label="Copy snippet" />
-          </div>
-          <p className="mt-3 text-xs text-gray-500">
-            Where the reference comes from: with Stripe, the redirect address
-            includes <code className="text-[11px]">?session_id=&#123;CHECKOUT_SESSION_ID&#125;</code>{" "}
-            and Stripe fills the value in itself. With Flutterwave, the
-            reference is added automatically on redirect. With your own
-            backend, send the customer to the page with{" "}
-            <code className="text-[11px]">?order_id=</code> and the id you
-            reported. Skipping the snippet entirely? The complete-card
-            response already includes a{" "}
-            <code className="text-[11px]">rewardEventId</code>, so you can send
-            the customer straight to{" "}
-            <code className="text-[11px]">{rewardPagePattern}</code>, where the
-            whole claim happens.
-          </p>
-        </div>
-      </div>
+      <ConfigurationTabs
+        stripe={{
+          webhookUrl,
+          configured: stripeSecret.configured,
+          updatedAt: stripeSecret.updatedAt,
+        }}
+        flutterwave={{
+          webhookUrl: flutterwaveWebhookUrl,
+          configured: flutterwaveSecret.configured,
+          updatedAt: flutterwaveSecret.updatedAt,
+        }}
+        apiKey={{
+          hasKey: apiKey.has_key,
+          lastFour: apiKey.last_four,
+          createdAt: apiKey.created_at,
+        }}
+        snippet={snippet}
+        baseUrl={appBase}
+        rewardPagePattern={rewardPagePattern}
+      />
     </div>
   );
 }

@@ -100,9 +100,9 @@ export function formatBps(bps: number): string {
  * than parseFloat to keep the no-floats rule intact end to end.
  */
 export function formatUsdPrice(priceText: string | null | undefined): string {
-  if (!priceText) return "—";
+  if (!priceText) return "Unknown";
   const s = String(priceText).trim();
-  if (!/^\d+(\.\d+)?$/.test(s)) return "—";
+  if (!/^\d+(\.\d+)?$/.test(s)) return "Unknown";
 
   const [whole, frac = ""] = s.split(".");
   const cents = Number((frac + "00").slice(0, 2)); // 0-99, safe as a Number

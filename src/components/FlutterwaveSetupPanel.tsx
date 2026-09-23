@@ -1,175 +1,218 @@
 "use client";
 
-import { useState } from "react";
-import { CopyButton } from "@/components/CopyButton";
+import { useState, type ReactNode } from "react";
+import { CodeField } from "@/components/CodeField";
+import { SuccessPageSnippet } from "@/components/SuccessPageSnippet";
+import {
+  SetupActions,
+  SetupProgress,
+  SetupStep,
+  type WebhookStatus,
+} from "@/components/SetupGuide";
 
 /**
- * Flutterwave Path A setup (reward-delivery spec section 5, second provider).
- * Written in merchant language: paste our webhook address into the Flutterwave
- * dashboard, invent a secret hash and paste the SAME value into both places.
- * Flutterwave appends the order reference to the redirect by itself, so there
- * is no third step and nothing to fill in per order.
+ * Flutterwave tab of Settings → Configuration.
+ *
+ * The merchant never invents anything: we generate the secret hash and show it,
+ * they paste it into Flutterwave, then paste the same shared snippet at the end.
+ * Flutterwave is told to keep every event box ticked because we only act on
+ * successful USD charges and acknowledge everything else.
  */
+
+const TOTAL_STEPS = 3;
+
+/** Bold term inside a sentence, without shouting. */
+function Strong({ children }: { children: ReactNode }) {
+  return <span className="font-medium text-ink">{children}</span>;
+}
+
+/** A fresh secret hash: 32 random bytes as hex, which is what we store. */
+function generateSecretHash(): string {
+  const bytes = new Uint8Array(32);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function FlutterwaveSetupPanel({
   webhookUrl,
-  initialConfigured,
-  initialUpdatedAt,
+  snippet,
+  initialStatus,
+  onStatusChange,
 }: {
   webhookUrl: string;
-  initialConfigured: boolean;
-  initialUpdatedAt: string | null;
+  snippet: string;
+  initialStatus: WebhookStatus;
+  onStatusChange: (status: WebhookStatus) => void;
 }) {
-  const [configured, setConfigured] = useState(initialConfigured);
-  const [updatedAt, setUpdatedAt] = useState(initialUpdatedAt);
-  const [secret, setSecret] = useState("");
+  const [step, setStep] = useState(1);
+  const [configured, setConfigured] = useState(initialStatus.configured);
+  const [secretHash, setSecretHash] = useState<string | null>(() =>
+    initialStatus.configured ? null : generateSecretHash(),
+  );
+  const [replacing, setReplacing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedNow, setSavedNow] = useState(false);
 
-  async function save() {
+  async function saveSecretHash() {
+    if (!secretHash) return;
     setBusy(true);
     setError(null);
-    setMessage(null);
     try {
       const res = await fetch("/api/merchant/fiat-webhook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          webhookSecret: secret.trim(),
-          provider: "flutterwave",
-        }),
+        body: JSON.stringify({ webhookSecret: secretHash, provider: "flutterwave" }),
       });
-      const json = await res.json().catch(() => ({}));
+      const body = (await res.json().catch(() => ({}))) as {
+        updatedAt?: string;
+        error?: string;
+      };
       if (!res.ok) {
-        setError(json.error ?? "Could not save the secret hash. Please try again.");
+        setError(body.error ?? "Could not save the secret hash. Please try again.");
         return;
       }
       setConfigured(true);
-      setUpdatedAt(json.updatedAt ?? new Date().toISOString());
-      setSecret("");
-      setMessage("Saved. Your card rewards are set up.");
+      setReplacing(false);
+      setSavedNow(true);
+      onStatusChange({
+        configured: true,
+        updatedAt: body.updatedAt ?? new Date().toISOString(),
+      });
+    } catch {
+      setError("Could not save the secret hash. Please try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function clear() {
-    setBusy(true);
+  function startReplacing() {
+    setSecretHash(generateSecretHash());
+    setReplacing(true);
+    setSavedNow(false);
     setError(null);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave", {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        setError("Could not remove the secret hash. Please try again.");
-        return;
-      }
-      setConfigured(false);
-      setUpdatedAt(null);
-      setMessage(
-        "Removed. Card rewards from Flutterwave are switched off until you set it up again.",
-      );
-    } finally {
-      setBusy(false);
-    }
   }
+
+  const lastStep = step === TOTAL_STEPS;
+  const showHash = !configured || replacing;
 
   return (
-    <div className="min-w-0 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-ink">
-          Card payments (Flutterwave)
-        </h2>
-        {configured ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-            Set up
-          </span>
-        ) : (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-            Not set up yet
-          </span>
-        )}
-      </div>
-      <p className="mt-1 text-xs text-gray-500">
-        Let customers pay by card, bank or mobile money and still earn rewards.
-      </p>
+    <div>
+      <SetupProgress step={step} total={TOTAL_STEPS} />
 
-      <ol className="mt-4 space-y-3 text-sm text-ink">
-        <li>
-          <span className="font-medium">1.</span> In your Flutterwave
-          dashboard, go to <span className="font-medium">Settings</span>, then{" "}
-          <span className="font-medium">Webhooks</span>, and paste this
-          address as the webhook URL. Leave every event box ticked:
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <code className="min-w-0 break-all rounded-xl bg-equixity-mist/70 px-3 py-1.5 text-xs">
-              {webhookUrl}
-            </code>
-            <CopyButton value={webhookUrl} label="Copy web address" />
-          </div>
-        </li>
-        <li>
-          <span className="font-medium">2.</span> Invent a secret hash: any
-          long random string you make up. Paste the exact same value into the{" "}
-          <span className="font-medium">Secret hash</span> field in the
-          dashboard and here:
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input
-              type="password"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder="Paste your secret hash (you choose the value)"
-              autoComplete="off"
-              disabled={busy}
-              className="min-w-0 flex-1 rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink outline-none focus:border-equixity"
-            />
-            <button
-              type="button"
-              onClick={save}
-              disabled={busy || secret.trim() === ""}
-              className="rounded-full bg-equixity px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Save secret hash
-            </button>
-          </div>
-        </li>
-        <li>
-          <span className="font-medium">3.</span> Show the reward to the
-          customer: paste the snippet from the{" "}
-          <span className="font-medium">Your success page</span> panel onto
-          the page your <span className="font-medium">redirect_url</span>{" "}
-          already points to. There is nothing to add to it: Flutterwave
-          appends the order reference to the address by itself.
-        </li>
-      </ol>
-
-      {message && <p className="mt-3 text-sm text-emerald-700">{message}</p>}
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
-      {configured && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-ink/5 pt-4">
-          <p className="text-xs text-slate">
-            {updatedAt
-              ? `Last updated ${new Date(updatedAt).toLocaleString()}.`
-              : null}{" "}
-            The secret hash is stored securely and never shown again. To
-            change it, paste a new one and save.
+      {step === 1 ? (
+        <SetupStep title="Add the Equixity web address in Flutterwave">
+          <p className="mt-2 text-sm text-slate">
+            In Flutterwave, open <Strong>Settings</Strong>, then{" "}
+            <Strong>Webhooks</Strong>. Paste this web address as the webhook URL
+            and leave every event box ticked:
           </p>
-          <button
-            type="button"
-            onClick={clear}
-            disabled={busy}
-            className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
-          >
-            Remove secret hash
-          </button>
-        </div>
-      )}
+          <CodeField value={webhookUrl} label="Copy web address" />
+          <p className="mt-3 text-xs leading-5 text-slate">
+            Leaving every box ticked is safe: only successful USD charges create
+            a reward, and everything else is acknowledged and ignored.
+          </p>
+        </SetupStep>
+      ) : null}
 
-      <p className="mt-4 border-t border-ink/5 pt-4 text-xs text-slate">
-        Only USD charges can create a reward. Charges in any other currency
-        are refused rather than converted.
-      </p>
+      {step === 2 ? (
+        <SetupStep title="Paste your secret hash">
+          {showHash ? (
+            <>
+              <p className="mt-2 text-sm text-slate">
+                In the same Flutterwave webhook settings, paste this into the{" "}
+                <Strong>Secret hash</Strong> field and click Save there. It is
+                already made for you, so there is nothing to invent.
+              </p>
+              <CodeField value={secretHash ?? ""} label="Copy secret hash" />
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveSecretHash}
+                  disabled={busy}
+                  className="rounded-full bg-equixity px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busy ? "Saving..." : "Save secret hash"}
+                </button>
+                {replacing ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplacing(false);
+                      setError(null);
+                    }}
+                    className="text-xs font-medium text-slate transition hover:text-ink"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate">
+                Save it here as well, otherwise Flutterwave payments stop being
+                verified. Lost the value? Make a new one from this screen.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-slate">
+                Your secret hash is saved and Flutterwave payments are being
+                verified.
+              </p>
+              {savedNow ? (
+                <p className="mt-2 text-sm text-emerald-700">
+                  Saved. Paste the same value into Flutterwave if you have not
+                  already.
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={startReplacing}
+                className="mt-3 text-xs font-medium text-equixity underline-offset-2 transition hover:underline"
+              >
+                Use a new secret hash
+              </button>
+            </>
+          )}
+          {error ? (
+            <p className="mt-2 rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          ) : null}
+        </SetupStep>
+      ) : null}
+
+      {step === 3 ? (
+        <SetupStep title="Paste the snippet on your thank-you page">
+          <p className="mt-2 text-sm text-slate">
+            This is the page Flutterwave sends customers to after they pay. Paste
+            the snippet once:
+          </p>
+          <SuccessPageSnippet snippet={snippet} />
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-sm font-medium text-emerald-900">All set.</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">
+              Flutterwave card payments now create a reward for your customers,
+              with nothing else to build.
+            </p>
+          </div>
+          <p className="mt-4 text-xs leading-5 text-slate">
+            Only USD charges create a reward. Any other currency is refused
+            instead of converted.
+          </p>
+        </SetupStep>
+      ) : null}
+
+      <SetupActions
+        onBack={step > 1 ? () => setStep((s) => s - 1) : undefined}
+        onNext={lastStep ? undefined : () => setStep((s) => s + 1)}
+        nextDisabled={step === 2 && !configured}
+      />
     </div>
   );
 }

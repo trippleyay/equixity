@@ -44,7 +44,7 @@ export async function POST() {
       // Stated explicitly so the UI can warn honestly rather than implying the
       // key can be looked up again later.
       message:
-        "Copy this key now. It will not be shown again — only the last four characters are stored.",
+        "Copy this key now. It will not be shown again. Only the last four characters are stored.",
     });
   });
 }
