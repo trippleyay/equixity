@@ -19,8 +19,9 @@ import { AssetTable, type AssetRow } from "@/components/AssetTable";
  */
 
 const ELIGIBILITY_TEXT =
-  "I confirm my business does not primarily serve customers in the United States, " +
-  "United Kingdom, Canada, Australia, or any OFAC-sanctioned jurisdiction.";
+  "I confirm my business does not primarily serve customers located in, or " +
+  "residents of, the United States (including U.S. Persons), United Kingdom, " +
+  "Canada, Australia, Mainland China, or any OFAC-sanctioned jurisdiction.";
 
 /** 100 bps -> "1", 150 bps -> "1.5", 25 bps -> "0.25". */
 function bpsToPercentString(bps: number): string {
@@ -164,9 +165,9 @@ export function RewardsForm({
           <span>{ELIGIBILITY_TEXT}</span>
         </label>
         <p className="mt-2 text-xs text-gray-500">
-          Required before rewards can be enabled. xStocks and PreStocks are
-          restricted for persons in those jurisdictions, so this is enforced
-          server-side as well as here.
+          Required before rewards can be enabled. Distribution or promotion of
+          xStocks and PreStocks to individuals or entities in these restricted
+          jurisdictions is strictly prohibited under platform compliance terms.
         </p>
       </div>
 
@@ -194,7 +195,7 @@ export function RewardsForm({
       <p className="text-xs text-gray-400">
         {eligibilityConfirmed
           ? "Turn rewards off to stop your customers from earning while you pause promotions or stop using Equixity. Your asset and rate are kept."
-          : "Tick the eligibility statement above to enable rewards."}
+          : "Complete the eligibility confirmation to enable rewards."}
       </p>
 
       <button

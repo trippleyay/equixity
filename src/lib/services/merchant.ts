@@ -181,8 +181,9 @@ export async function updateSettings(
     if (!merchant?.confirmed_customer_eligibility) {
       throw new SettingsValidationError(
         "Rewards cannot be enabled until you confirm that your business does not " +
-          "primarily serve customers in the United States, United Kingdom, Canada, " +
-          "Australia, or any OFAC-sanctioned jurisdiction.",
+          "primarily serve customers located in, or residents of, the United " +
+          "States (including U.S. Persons), United Kingdom, Canada, Australia, " +
+          "Mainland China, or any OFAC-sanctioned jurisdiction.",
       );
     }
     // NOTE: the receiving wallet is deliberately NOT required here. Fiat-only
