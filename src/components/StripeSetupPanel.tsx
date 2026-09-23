@@ -16,9 +16,9 @@ import {
  *
  * Step 2 stores the signing secret, which is what makes the webhook verifiable,
  * so Next cannot be walked past without it. Done on the last step is the
- * merchant's explicit finish: it re-reads the stored secret from the server
- * rather than trusting local state, refuses if nothing was stored, and on
- * success marks the path set up and shows the finished view.
+ * merchant's explicit finish: it records the finish server-side (never from
+ * local state), refuses if nothing was stored, and only then does the tab chip
+ * read "Set up". A saved secret on its own reads "Finish setup".
  *
  * Nothing here is one-time. Saving is an upsert on (merchant, provider), so the
  * guide can be re-run whenever something changes on the Stripe side: paste a new
@@ -80,6 +80,8 @@ export function StripeSetupPanel({
       onStatusChange({
         configured: true,
         updatedAt: body.updatedAt ?? new Date().toISOString(),
+        // A new secret means the path is mid-setup again until Done is pressed.
+        completedAt: null,
       });
     } catch {
       setError("Could not save the signing secret. Please try again.");
@@ -88,26 +90,41 @@ export function StripeSetupPanel({
     }
   }
 
-  /** Done: confirm against the stored secret, then close the guide out. */
+  /**
+   * Done: records the finish, which is what flips the tab chip to "Set up". The
+   * server refuses while no signing secret is stored, so this cannot claim a
+   * finished setup that does not exist.
+   */
   async function done() {
     setFinishing(true);
     setError(null);
     try {
-      const res = await fetch("/api/merchant/fiat-webhook?provider=stripe");
+      const res = await fetch("/api/merchant/fiat-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "stripe", complete: true }),
+      });
       const body = (await res.json().catch(() => ({}))) as {
         configured?: boolean;
         updatedAt?: string | null;
+        completedAt?: string | null;
+        error?: string;
       };
       if (!res.ok || !body.configured) {
         setError(
-          "No signing secret is saved yet. Go back to step 2 and paste the one Stripe showed you.",
+          body.error ??
+            "No signing secret is saved yet. Go back to step 2 and paste the one Stripe showed you.",
         );
         return;
       }
       setConfigured(true);
       setSavedNow(false);
       setFinished(true);
-      onStatusChange({ configured: true, updatedAt: body.updatedAt ?? null });
+      onStatusChange({
+        configured: true,
+        updatedAt: body.updatedAt ?? null,
+        completedAt: body.completedAt ?? null,
+      });
     } catch {
       setError("Could not confirm the setup right now. Please try again.");
     } finally {
@@ -140,7 +157,7 @@ export function StripeSetupPanel({
       setConfigured(false);
       setSavedNow(false);
       setFinished(false);
-      onStatusChange({ configured: false, updatedAt: null });
+      onStatusChange({ configured: false, updatedAt: null, completedAt: null });
     } catch {
       setError("Could not remove the signing secret. Please try again.");
     } finally {
@@ -167,7 +184,7 @@ export function StripeSetupPanel({
             setFinished(false);
             setStep(1);
           }}
-          backLabel="Review the steps"
+          backLabel="Update setup"
         />
       </div>
     );

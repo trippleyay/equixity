@@ -84,11 +84,13 @@ export default async function SettingsPage() {
           webhookUrl,
           configured: stripeSecret.configured,
           updatedAt: stripeSecret.updatedAt,
+          completedAt: stripeSecret.completedAt,
         }}
         flutterwave={{
           webhookUrl: flutterwaveWebhookUrl,
           configured: flutterwaveSecret.configured,
           updatedAt: flutterwaveSecret.updatedAt,
+          completedAt: flutterwaveSecret.completedAt,
         }}
         apiKey={{
           hasKey: apiKey.has_key,

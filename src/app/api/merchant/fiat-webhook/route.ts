@@ -3,6 +3,7 @@ import { jsonError, jsonOk, withApi } from "@/lib/http";
 import {
   getWebhookSecretStatus,
   saveWebhookSecret,
+  markWebhookSetupComplete,
   clearWebhookSecret,
   parseProvider,
   type WebhookProvider,
@@ -12,9 +13,11 @@ import {
  * POST /api/merchant/fiat-webhook — Path A setup (reward-delivery spec 5),
  * for each hosted payment webhook: Stripe today, Flutterwave alongside it.
  *
- * GET  -> whether a signing secret is configured (never the secret itself).
- * POST -> save or replace the signing secret from the processor's dashboard.
- *         Encrypted at rest; only its presence is ever reported.
+ * GET  -> whether a signing secret is configured, plus whether the merchant has
+ *         pressed Done (never the secret itself).
+ * POST -> save or replace the signing secret from the processor's dashboard
+ *         (encrypted at rest; only its presence is ever reported), or mark the
+ *         setup finished with {"complete": true} when the merchant presses Done.
  * DELETE -> clear it (merchant rotating or leaving Path A).
  *
  * The secret shape depends on the provider: Stripe generates `whsec_...`,
@@ -61,8 +64,28 @@ export async function POST(req: Request) {
     } catch {
       return jsonError("Invalid JSON body", 400);
     }
-    const parsed = body as { webhookSecret?: unknown; provider?: unknown };
+    const parsed = body as {
+      webhookSecret?: unknown;
+      provider?: unknown;
+      complete?: unknown;
+    };
     const provider = parseProvider(parsed?.provider);
+
+    // Done in the setup guide: record the finish, and refuse if there is nothing
+    // stored to finish. The tabs read "Set up" off this, never off the save.
+    if (parsed?.complete === true) {
+      const status = await markWebhookSetupComplete(merchant.id, provider);
+      if (!status) {
+        return jsonError(
+          provider === "stripe"
+            ? "No Stripe signing secret is saved yet. Paste the secret Stripe showed you, then try again."
+            : "No Flutterwave secret hash is saved yet. Paste the hash into Flutterwave, then try again.",
+          400,
+        );
+      }
+      return jsonOk(status);
+    }
+
     const secret = parsed?.webhookSecret;
     if (typeof secret !== "string" || secret.trim() === "") {
       return jsonError("A signing secret is required.", 400);

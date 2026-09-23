@@ -27,6 +27,12 @@ export type WebhookProvider = "stripe" | "flutterwave";
 export type StoredWebhookSecret = {
   configured: boolean;
   updatedAt: string | null;
+  /**
+   * Set only once the merchant has pressed Done in the setup guide, so the
+   * Configuration tabs never read "Set up" while they are still on step 2.
+   * NULL means the secret is stored but the path is not finished.
+   */
+  completedAt: string | null;
 };
 
 function isProvider(value: string): value is WebhookProvider {
@@ -46,7 +52,7 @@ export async function getWebhookSecretStatus(
   const service = getServiceClient();
   const { data } = await service
     .from(TABLE)
-    .select("webhook_secret, updated_at")
+    .select("webhook_secret, updated_at, completed_at")
     .eq("merchant_id", merchantId)
     .eq("provider", provider)
     .maybeSingle();
@@ -54,6 +60,7 @@ export async function getWebhookSecretStatus(
     // Presence only, the ciphertext itself never leaves this module.
     configured: Boolean(data?.webhook_secret),
     updatedAt: data?.updated_at ?? null,
+    completedAt: data?.completed_at ?? null,
   };
 }
 
@@ -100,10 +107,42 @@ export async function saveWebhookSecret(
       provider,
       webhook_secret: encryptPayload(plaintextSecret),
       updated_at: new Date().toISOString(),
+      // Replacing a secret puts the path back in progress: it only counts as set
+      // up again once the merchant walks the guide and presses Done.
+      completed_at: null,
     },
     { onConflict: "merchant_id,provider" },
   );
   if (error) throw new Error(`Could not save the webhook secret: ${error.message}`);
+}
+
+/**
+ * Records that the merchant pressed Done: from here the tab reads "Set up".
+ * Returns null when no secret is stored yet, which is what the route turns into
+ * a 400 rather than pretending the path is finished.
+ */
+export async function markWebhookSetupComplete(
+  merchantId: string,
+  provider: WebhookProvider = "stripe",
+): Promise<StoredWebhookSecret | null> {
+  const service = getServiceClient();
+  const completedAt = new Date().toISOString();
+  const { data, error } = await service
+    .from(TABLE)
+    .update({ completed_at: completedAt })
+    .eq("merchant_id", merchantId)
+    .eq("provider", provider)
+    .select("updated_at")
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Could not record the setup as finished: ${error.message}`);
+  }
+  if (!data) return null;
+  return {
+    configured: true,
+    updatedAt: data.updated_at ?? null,
+    completedAt,
+  };
 }
 
 export async function clearWebhookSecret(

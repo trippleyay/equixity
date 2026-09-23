@@ -14,18 +14,12 @@ import {
  * Flutterwave tab of Settings → Configuration.
  *
  * The merchant never invents anything: we generate the secret hash and show it,
- * they paste it into Flutterwave, then paste the same shared snippet at the end.
- * Flutterwave is told to keep every event box ticked because we only act on
- * successful USD charges and acknowledge everything else.
+ * they paste it into Flutterwave, and Next saves it here. There is no separate
+ * save button because there is nothing for them to decide at that point.
  *
- * Step 2 stores the secret hash, which is what makes the webhook verifiable, so
- * Next cannot be walked past without it. Done on the last step re-reads the
- * stored hash from the server, refuses if nothing was stored, and on success
- * marks the path set up and shows the finished view.
- *
- * Nothing here is one-time. Saving is an upsert on (merchant, provider), so the
- * guide can be re-run whenever something changes on the Flutterwave side: make a
- * new hash in step 2, or remove the stored hash to start the path over.
+ * A fresh hash is generated on every visit, so if their hash ever changed in
+ * Flutterwave they always have a new value to paste. Done on the last step is
+ * what marks the path finished, which is what flips the tab chip to "Set up".
  */
 
 const TOTAL_STEPS = 3;
@@ -51,29 +45,23 @@ function generateSecretHash(): string {
 export function FlutterwaveSetupPanel({
   webhookUrl,
   snippet,
-  initialStatus,
   onStatusChange,
 }: {
   webhookUrl: string;
   snippet: string;
+  /** Status when the tab rendered; the tab chip itself lives in the parent. */
   initialStatus: WebhookStatus;
   onStatusChange: (status: WebhookStatus) => void;
 }) {
   const [step, setStep] = useState(1);
-  const [configured, setConfigured] = useState(initialStatus.configured);
-  const [secretHash, setSecretHash] = useState<string | null>(() =>
-    initialStatus.configured ? null : generateSecretHash(),
-  );
-  const [replacing, setReplacing] = useState(false);
+  const [secretHash] = useState(() => generateSecretHash());
   const [busy, setBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [finished, setFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedNow, setSavedNow] = useState(false);
 
-  async function saveSecretHash() {
-    if (!secretHash) return;
+  /** Saves the hash shown in step 2. Called by Next, so there is no save button. */
+  async function saveSecretHash(): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
@@ -84,95 +72,63 @@ export function FlutterwaveSetupPanel({
       });
       const body = (await res.json().catch(() => ({}))) as {
         updatedAt?: string;
+        completedAt?: string | null;
         error?: string;
       };
       if (!res.ok) {
         setError(body.error ?? "Could not save the secret hash. Please try again.");
-        return;
+        return false;
       }
-      setConfigured(true);
-      setReplacing(false);
-      setSavedNow(true);
       onStatusChange({
         configured: true,
         updatedAt: body.updatedAt ?? new Date().toISOString(),
+        completedAt: body.completedAt ?? null,
       });
+      return true;
     } catch {
       setError("Could not save the secret hash. Please try again.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  /** Done: confirm against the stored hash, then close the guide out. */
+  async function leaveStepTwo() {
+    if (await saveSecretHash()) setStep(3);
+  }
+
+  /** Done: records the finish, which is what flips the tab chip to "Set up". */
   async function done() {
     setFinishing(true);
     setError(null);
     try {
-      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave");
+      const res = await fetch("/api/merchant/fiat-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "flutterwave", complete: true }),
+      });
       const body = (await res.json().catch(() => ({}))) as {
         configured?: boolean;
         updatedAt?: string | null;
+        completedAt?: string | null;
+        error?: string;
       };
       if (!res.ok || !body.configured) {
-        setError(
-          "No secret hash is saved yet. Go back to step 2 and save the hash shown there.",
-        );
+        setError(body.error ?? "Save your secret hash first, then press Done.");
         return;
       }
-      setConfigured(true);
-      setSavedNow(false);
       setFinished(true);
-      onStatusChange({ configured: true, updatedAt: body.updatedAt ?? null });
+      onStatusChange({
+        configured: true,
+        updatedAt: body.updatedAt ?? null,
+        completedAt: body.completedAt ?? null,
+      });
     } catch {
       setError("Could not confirm the setup right now. Please try again.");
     } finally {
       setFinishing(false);
     }
   }
-
-  /** Remove the stored hash, so the path can be set up again from scratch. */
-  async function removeSecretHash() {
-    if (
-      !window.confirm(
-        "Remove the saved secret hash? Flutterwave payments stop creating rewards until you save a new one.",
-      )
-    ) {
-      return;
-    }
-    setRemoving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave", {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? "Could not remove the secret hash. Please try again.");
-        return;
-      }
-      setConfigured(false);
-      setReplacing(false);
-      setSavedNow(false);
-      setFinished(false);
-      setSecretHash(generateSecretHash());
-      onStatusChange({ configured: false, updatedAt: null });
-    } catch {
-      setError("Could not remove the secret hash. Please try again.");
-    } finally {
-      setRemoving(false);
-    }
-  }
-
-  function startReplacing() {
-    setSecretHash(generateSecretHash());
-    setReplacing(true);
-    setSavedNow(false);
-    setError(null);
-  }
-
-  const lastStep = step === TOTAL_STEPS;
-  const showHash = !configured || replacing;
 
   if (finished) {
     return (
@@ -194,7 +150,7 @@ export function FlutterwaveSetupPanel({
             setFinished(false);
             setStep(1);
           }}
-          backLabel="Review the steps"
+          backLabel="Update setup"
         />
       </div>
     );
@@ -221,77 +177,11 @@ export function FlutterwaveSetupPanel({
 
       {step === 2 ? (
         <SetupStep title="Paste your secret hash">
-          {showHash ? (
-            <>
-              <p className="mt-2 text-sm text-slate">
-                In the same Flutterwave webhook settings, paste this into the{" "}
-                <Strong>Secret hash</Strong> field and click Save there. It is
-                already made for you, so there is nothing to invent.
-              </p>
-              <CodeField value={secretHash ?? ""} label="Copy secret hash" />
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={saveSecretHash}
-                  disabled={busy}
-                  className="rounded-full bg-equixity px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {busy ? "Saving..." : "Save secret hash"}
-                </button>
-                {replacing ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReplacing(false);
-                      setError(null);
-                    }}
-                    className="text-xs font-medium text-slate transition hover:text-ink"
-                  >
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-              <p className="mt-3 text-xs leading-5 text-slate">
-                Save it here as well, otherwise Flutterwave payments stop being
-                verified. Lost the value? Make a new one from this screen.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="mt-2 text-sm text-slate">
-                Your secret hash is saved and Flutterwave payments are being
-                verified.
-              </p>
-              {savedNow ? (
-                <p className="mt-2 text-sm text-emerald-700">
-                  Saved. Paste the same value into Flutterwave if you have not
-                  already.
-                </p>
-              ) : null}
-              <p className="mt-3 text-xs leading-5 text-slate">
-                Changed something in Flutterwave, or want to start this path
-                over? Make a new hash and save it, or remove the saved one and
-                set the path up again.
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-4">
-                <button
-                  type="button"
-                  onClick={startReplacing}
-                  className="text-xs font-medium text-equixity underline-offset-2 transition hover:underline"
-                >
-                  Use a new secret hash
-                </button>
-                <button
-                  type="button"
-                  onClick={removeSecretHash}
-                  disabled={removing}
-                  className="text-xs font-medium text-slate underline-offset-2 transition hover:text-ink hover:underline disabled:opacity-50"
-                >
-                  {removing ? "Removing..." : "Remove the saved hash"}
-                </button>
-              </div>
-            </>
-          )}
+          <p className="mt-2 text-sm text-slate">
+            In the same Flutterwave webhook settings, paste this into the{" "}
+            <Strong>Secret hash</Strong> field and click Save there.
+          </p>
+          <CodeField value={secretHash} label="Copy secret hash" />
         </SetupStep>
       ) : null}
 
@@ -302,11 +192,6 @@ export function FlutterwaveSetupPanel({
             the snippet once:
           </p>
           <SuccessPageSnippet snippet={snippet} />
-          <p className="mt-4 text-xs leading-5 text-slate">
-            Only USD charges create a reward. Any other currency is refused
-            instead of converted. Press Done when you are finished, and we will
-            check that your secret hash is saved.
-          </p>
         </SetupStep>
       ) : null}
 
@@ -318,10 +203,10 @@ export function FlutterwaveSetupPanel({
 
       <SetupActions
         onBack={step > 1 ? () => setStep((s) => s - 1) : undefined}
-        onNext={lastStep ? done : () => setStep((s) => s + 1)}
-        nextLabel={lastStep ? "Done" : "Next"}
-        nextDisabled={step === 2 && !configured}
-        nextBusy={finishing}
+        onNext={step === 1 ? () => setStep(2) : step === 2 ? leaveStepTwo : done}
+        nextLabel={step === TOTAL_STEPS ? "Done" : "Next"}
+        nextBusy={step === 2 ? busy : finishing}
+        nextBusyLabel={step === 2 ? "Saving..." : "Checking..."}
       />
     </div>
   );

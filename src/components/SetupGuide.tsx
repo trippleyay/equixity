@@ -11,10 +11,15 @@ import type { ReactNode } from "react";
  * developer documentation.
  */
 
-/** Secret-presence status for a hosted webhook; never the secret itself. */
+/**
+ * Secret-presence status for a hosted webhook; never the secret itself.
+ * `completedAt` is only set once the merchant pressed Done, which is what the
+ * Configuration tabs read as "Set up".
+ */
 export type WebhookStatus = {
   configured: boolean;
   updatedAt: string | null;
+  completedAt: string | null;
 };
 
 /** Progress bar plus "Step N of M" for a path that has a fixed sequence. */
@@ -66,6 +71,7 @@ export function SetupActions({
   nextLabel = "Next",
   nextDisabled = false,
   nextBusy = false,
+  nextBusyLabel = "Checking...",
 }: {
   onBack?: () => void;
   backLabel?: string;
@@ -73,6 +79,7 @@ export function SetupActions({
   nextLabel?: string;
   nextDisabled?: boolean;
   nextBusy?: boolean;
+  nextBusyLabel?: string;
 }) {
   return (
     <div className="mt-5 flex items-center justify-between gap-3 border-t border-ink/5 pt-4">
@@ -94,7 +101,7 @@ export function SetupActions({
           disabled={nextDisabled || nextBusy}
           className="rounded-full bg-equixity px-5 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {nextBusy ? "Checking..." : nextLabel}
+          {nextBusy ? nextBusyLabel : nextLabel}
         </button>
       ) : null}
     </div>

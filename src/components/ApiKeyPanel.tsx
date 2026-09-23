@@ -180,7 +180,7 @@ export function ApiKeyPanel({
           Keep this snippet on the page customers land on after paying:
         </p>
         <SuccessPageSnippet snippet={snippet} />
-        <SetupActions onBack={() => setFinished(false)} backLabel="Review the setup" />
+        <SetupActions onBack={() => setFinished(false)} backLabel="Update setup" />
       </div>
     );
   }

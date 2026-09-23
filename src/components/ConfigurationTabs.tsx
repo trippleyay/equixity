@@ -15,6 +15,10 @@ import type { WebhookStatus } from "@/components/SetupGuide";
  * All three panels stay mounted and inactive ones are hidden, so a merchant who
  * switches tabs mid-setup keeps the step they were on and the exact secret hash
  * that was shown to them.
+ *
+ * A path only reads as "Set up" once the merchant pressed Done (completedAt).
+ * A stored secret alone shows "Finish setup": saving the secret in step 2 is not
+ * the same as having walked the steps and pasted the snippet.
  */
 
 type TabId = "stripe" | "flutterwave" | "api";
@@ -33,9 +37,9 @@ const TITLES: Record<TabId, string> = {
 };
 
 const BLURBS: Record<TabId, string> = {
-  stripe: "Card payments through Stripe create rewards, with nothing to build.",
+  stripe: "Card payments through Stripe create rewards",
   flutterwave: "Card, bank and mobile money payments through Flutterwave create rewards.",
-  api: "For your own checkout or a processor we do not host a webhook for. Your backend reports each completed order with this key.",
+  api: "For a custom checkout or a processor we do not support yet. Your backend reports each completed order with this key.",
 };
 
 const TONE_CLASSES: Record<Tone, string> = {
@@ -50,6 +54,18 @@ function shortDate(iso: string | null): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString();
+}
+
+/** Green pill only after Done; purple "Finish setup" while a secret sits unsaved. */
+function pathStatus(
+  configured: boolean,
+  completedAt: string | null,
+): { label: string; tone: Tone } {
+  if (!configured) return { label: "Not set up yet", tone: "todo" };
+  const finished = shortDate(completedAt);
+  return finished
+    ? { label: `Set up ${finished}`, tone: "done" }
+    : { label: "Finish setup", tone: "info" };
 }
 
 export function ConfigurationTabs({
@@ -71,27 +87,24 @@ export function ConfigurationTabs({
   const [stripeStatus, setStripeStatus] = useState<WebhookStatus>({
     configured: stripe.configured,
     updatedAt: stripe.updatedAt,
+    completedAt: stripe.completedAt,
   });
   const [flutterwaveStatus, setFlutterwaveStatus] = useState<WebhookStatus>({
     configured: flutterwave.configured,
     updatedAt: flutterwave.updatedAt,
+    completedAt: flutterwave.completedAt,
   });
   const [apiKeyStatus, setApiKeyStatus] = useState<KeyState>(apiKey);
 
-  const stripeDate = shortDate(stripeStatus.updatedAt);
-  const flutterwaveDate = shortDate(flutterwaveStatus.updatedAt);
   const apiKeyDate = shortDate(apiKeyStatus.createdAt);
+  const activeIndex = TABS.findIndex((t) => t.id === tab);
 
   const status: Record<TabId, { label: string; tone: Tone }> = {
-    stripe: stripeStatus.configured
-      ? { label: stripeDate ? `Set up ${stripeDate}` : "Set up", tone: "done" }
-      : { label: "Not set up yet", tone: "todo" },
-    flutterwave: flutterwaveStatus.configured
-      ? {
-          label: flutterwaveDate ? `Set up ${flutterwaveDate}` : "Set up",
-          tone: "done",
-        }
-      : { label: "Not set up yet", tone: "todo" },
+    stripe: pathStatus(stripeStatus.configured, stripeStatus.completedAt),
+    flutterwave: pathStatus(
+      flutterwaveStatus.configured,
+      flutterwaveStatus.completedAt,
+    ),
     api: apiKeyStatus.hasKey
       ? {
           label: apiKeyDate ? `Key created ${apiKeyDate}` : "Key active",
@@ -102,38 +115,42 @@ export function ConfigurationTabs({
 
   return (
     <div>
-      <div
-        role="tablist"
-        aria-label="Payment setup"
-        className="mt-6 flex flex-wrap gap-1 rounded-2xl border border-ink/5 bg-white p-1 shadow-soft sm:rounded-full"
-      >
-        {TABS.map((t) => {
-          const active = t.id === tab;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`tab-${t.id}`}
-              aria-selected={active}
-              aria-controls={`panel-${t.id}`}
-              onClick={() => setTab(t.id)}
-              className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition sm:rounded-full ${
-                active
-                  ? "bg-equixity text-white"
-                  : "text-slate hover:bg-equixity-mist hover:text-ink"
-              }`}
-            >
-              <span className="truncate">{t.label}</span>
-              <span
-                aria-hidden
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  status[t.id].tone === "done" ? "bg-emerald-400" : "bg-amber-400"
+      <div className="mt-6 rounded-2xl border border-ink/5 bg-white p-1 shadow-soft sm:rounded-full">
+        <div className="relative grid grid-cols-3">
+          {/* The purple pill slides across when you switch tabs rather than
+              blinking out of one and into the next. The panel below still
+              swaps instantly. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 w-1/3 rounded-2xl bg-equixity transition-transform duration-300 ease-out sm:rounded-full"
+            style={{ transform: `translateX(${activeIndex * 100}%)` }}
+          />
+          {TABS.map((t) => {
+            const active = t.id === tab;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`tab-${t.id}`}
+                aria-selected={active}
+                aria-controls={`panel-${t.id}`}
+                onClick={() => setTab(t.id)}
+                className={`relative z-10 flex min-w-0 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition-colors duration-300 sm:rounded-full ${
+                  active ? "text-white" : "text-slate hover:text-ink"
                 }`}
-              />
-            </button>
-          );
-        })}
+              >
+                <span className="truncate">{t.label}</span>
+                {status[t.id].tone === "done" ? (
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {TABS.map((t) => (
