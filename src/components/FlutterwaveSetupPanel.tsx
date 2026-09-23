@@ -22,6 +22,10 @@ import {
  * Next cannot be walked past without it. Done on the last step re-reads the
  * stored hash from the server, refuses if nothing was stored, and on success
  * marks the path set up and shows the finished view.
+ *
+ * Nothing here is one-time. Saving is an upsert on (merchant, provider), so the
+ * guide can be re-run whenever something changes on the Flutterwave side: make a
+ * new hash in step 2, or remove the stored hash to start the path over.
  */
 
 const TOTAL_STEPS = 3;
@@ -63,6 +67,7 @@ export function FlutterwaveSetupPanel({
   const [replacing, setReplacing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [finished, setFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedNow, setSavedNow] = useState(false);
@@ -126,6 +131,39 @@ export function FlutterwaveSetupPanel({
     }
   }
 
+  /** Remove the stored hash, so the path can be set up again from scratch. */
+  async function removeSecretHash() {
+    if (
+      !window.confirm(
+        "Remove the saved secret hash? Flutterwave payments stop creating rewards until you save a new one.",
+      )
+    ) {
+      return;
+    }
+    setRemoving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave", {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? "Could not remove the secret hash. Please try again.");
+        return;
+      }
+      setConfigured(false);
+      setReplacing(false);
+      setSavedNow(false);
+      setFinished(false);
+      setSecretHash(generateSecretHash());
+      onStatusChange({ configured: false, updatedAt: null });
+    } catch {
+      setError("Could not remove the secret hash. Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   function startReplacing() {
     setSecretHash(generateSecretHash());
     setReplacing(true);
@@ -154,7 +192,7 @@ export function FlutterwaveSetupPanel({
         <SetupActions
           onBack={() => {
             setFinished(false);
-            setStep(TOTAL_STEPS);
+            setStep(1);
           }}
           backLabel="Review the steps"
         />
@@ -230,13 +268,28 @@ export function FlutterwaveSetupPanel({
                   already.
                 </p>
               ) : null}
-              <button
-                type="button"
-                onClick={startReplacing}
-                className="mt-3 text-xs font-medium text-equixity underline-offset-2 transition hover:underline"
-              >
-                Use a new secret hash
-              </button>
+              <p className="mt-3 text-xs leading-5 text-slate">
+                Changed something in Flutterwave, or want to start this path
+                over? Make a new hash and save it, or remove the saved one and
+                set the path up again.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  onClick={startReplacing}
+                  className="text-xs font-medium text-equixity underline-offset-2 transition hover:underline"
+                >
+                  Use a new secret hash
+                </button>
+                <button
+                  type="button"
+                  onClick={removeSecretHash}
+                  disabled={removing}
+                  className="text-xs font-medium text-slate underline-offset-2 transition hover:text-ink hover:underline disabled:opacity-50"
+                >
+                  {removing ? "Removing..." : "Remove the saved hash"}
+                </button>
+              </div>
             </>
           )}
         </SetupStep>

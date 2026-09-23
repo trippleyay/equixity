@@ -19,6 +19,10 @@ import {
  * merchant's explicit finish: it re-reads the stored secret from the server
  * rather than trusting local state, refuses if nothing was stored, and on
  * success marks the path set up and shows the finished view.
+ *
+ * Nothing here is one-time. Saving is an upsert on (merchant, provider), so the
+ * guide can be re-run whenever something changes on the Stripe side: paste a new
+ * secret in step 2, or remove the stored secret to start the path over.
  */
 
 const TOTAL_STEPS = 4;
@@ -46,6 +50,7 @@ export function StripeSetupPanel({
   const [configured, setConfigured] = useState(initialStatus.configured);
   const [busy, setBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [finished, setFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedNow, setSavedNow] = useState(false);
@@ -110,6 +115,39 @@ export function StripeSetupPanel({
     }
   }
 
+  /** Remove the stored secret, so the path can be set up again from scratch. */
+  async function removeSecret() {
+    if (
+      !window.confirm(
+        "Remove the saved signing secret? Stripe payments stop creating rewards until you paste a new one.",
+      )
+    ) {
+      return;
+    }
+    setRemoving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/merchant/fiat-webhook?provider=stripe", {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(
+          body.error ?? "Could not remove the signing secret. Please try again.",
+        );
+        return;
+      }
+      setConfigured(false);
+      setSavedNow(false);
+      setFinished(false);
+      onStatusChange({ configured: false, updatedAt: null });
+    } catch {
+      setError("Could not remove the signing secret. Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   if (finished) {
     return (
       <div>
@@ -127,7 +165,7 @@ export function StripeSetupPanel({
         <SetupActions
           onBack={() => {
             setFinished(false);
-            setStep(TOTAL_STEPS);
+            setStep(1);
           }}
           backLabel="Review the steps"
         />
@@ -179,11 +217,26 @@ export function StripeSetupPanel({
             </button>
           </div>
           {configured ? (
-            <p className="mt-2 text-sm text-emerald-700">
-              {savedNow
-                ? "Saved. Your signing secret is stored securely."
-                : "Your signing secret is already saved."}
-            </p>
+            <div className="mt-2">
+              <p className="text-sm text-emerald-700">
+                {savedNow
+                  ? "Saved. Your signing secret is stored securely."
+                  : "Your signing secret is already saved."}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-slate">
+                Changed something in Stripe, or want to start this path over?
+                Paste a new secret above to replace it, or remove the saved one
+                and set the path up again.
+              </p>
+              <button
+                type="button"
+                onClick={removeSecret}
+                disabled={removing}
+                className="mt-2 text-xs font-medium text-slate underline-offset-2 transition hover:text-ink hover:underline disabled:opacity-50"
+              >
+                {removing ? "Removing..." : "Remove the saved secret"}
+              </button>
+            </div>
           ) : null}
         </SetupStep>
       ) : null}
