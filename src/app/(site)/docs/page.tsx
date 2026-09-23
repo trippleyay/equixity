@@ -6,7 +6,7 @@ import Container from "@/components/site/Container";
 export const metadata: Metadata = {
   title: "Docs - Equixity",
   description:
-    "How to connect a checkout to Equixity and start issuing stock rewards, written against the live product.",
+    "How to connect a checkout to Equixity and start issuing tokenized-stock rewards.",
 };
 
 const sections = [
@@ -49,8 +49,10 @@ export default function DocsPage() {
         eyebrow="Docs"
         title="Everything you need to plug in Equixity."
       >
-        These guides are written against the live product rather than a plan.
-        Start with getting started and go as deep as you need.
+        Equixity is currently in testing and may be available only to selected
+        merchants. These guides cover the current product experience and the
+        setup available to approved participants. Features and availability may
+        change before general availability.
       </PageHero>
 
       <Container className="py-16 sm:py-20">

@@ -13,11 +13,12 @@ export default function LegalDocument({
   return (
     <div className="mx-auto max-w-prose py-16 sm:py-20">
       <div className="mb-14 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm leading-relaxed text-slate">
-        <p className="font-semibold text-ink">Draft for legal review</p>
+        <p className="font-semibold text-ink">Current availability</p>
         <p className="mt-1">
-          This first draft must be reviewed and approved by qualified counsel
-          before Equixity relies on it or launches the service. Bracketed
-          drafting notes are not operative terms.
+          Equixity is currently in testing and may be available only to selected
+          merchants. It is not yet open for unrestricted production use. Features,
+          eligibility, availability, and these policies may change before general
+          availability.
         </p>
       </div>
 
