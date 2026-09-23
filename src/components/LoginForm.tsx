@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -27,11 +28,21 @@ export function LoginForm() {
     null,
   );
   const [busy, setBusy] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const errorParam = searchParams ? String(searchParams.get("error") ?? "") : "";
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
+    if (mode === "signup" && !acceptedTerms) {
+      setMessage({
+        kind: "error",
+        text: "Please agree to the Terms of Service and acknowledge the Privacy Policy before creating an account.",
+      });
+      return;
+    }
+
     setBusy(true);
     setMessage(null);
     try {
@@ -154,6 +165,45 @@ export function LoginForm() {
             />
           </label>
 
+          {mode === "signup" && (
+            <div className="rounded-2xl border border-gray-200 bg-white/60 p-4">
+              <label className="flex items-start gap-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  required
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-equixity-deep focus:ring-equixity-deep/30"
+                />
+                <span>
+                  I agree to the Equixity{" "}
+                  <Link
+                    href="/terms"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="font-medium text-equixity-deep underline underline-offset-2"
+                  >
+                    Terms of Service
+                  </Link>{" "}
+                  and acknowledge the{" "}
+                  <Link
+                    href="/privacy"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="font-medium text-equixity-deep underline underline-offset-2"
+                  >
+                    Privacy Policy
+                  </Link>
+                  .
+                </span>
+              </label>
+              <p className="mt-2 pl-7 text-xs text-gray-500">
+                Equixity is currently in testing and may not be generally
+                available yet.
+              </p>
+            </div>
+          )}
+
           {message && (
             <p
               className={`rounded-2xl px-4 py-2 text-sm ${
@@ -168,8 +218,8 @@ export function LoginForm() {
 
           <button
             type="submit"
-            disabled={busy}
-            className="w-full rounded-full bg-equixity-deep px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-50"
+            disabled={busy || (mode === "signup" && !acceptedTerms)}
+            className="w-full rounded-full bg-equixity-deep px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
           </button>
