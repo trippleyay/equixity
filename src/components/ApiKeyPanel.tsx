@@ -32,20 +32,11 @@ export function ApiKeyPanel({
   initialLastFour,
   initialCreatedAt,
   baseUrl,
-  fiatSnippet,
-  orderIdPlaceholder,
-  rewardPagePattern,
 }: {
   initialHasKey: boolean;
   initialLastFour: string | null;
   initialCreatedAt: string | null;
   baseUrl: string;
-  /** The fiat snippet, carrying data-order-id — see lib/sdk/snippet.ts. */
-  fiatSnippet: string;
-  /** The placeholder inside that snippet the merchant replaces per order. */
-  orderIdPlaceholder: string;
-  /** Pattern for the hosted reward page, for merchants who skip the snippet. */
-  rewardPagePattern: string;
 }) {
   const [state, setState] = useState<KeyState>({
     hasKey: initialHasKey,
@@ -139,7 +130,7 @@ export function ApiKeyPanel({
       {revealed ? (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3">
           <p className="text-xs font-medium text-amber-900">
-            Copy this key now — it will not be shown again.
+            Copy this key now. It will not be shown again.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <code className="break-all rounded bg-white px-2 py-1 font-mono text-xs">
@@ -220,7 +211,7 @@ export function ApiKeyPanel({
 
       {state.hasKey ? (
         <p className="mt-2 text-xs text-gray-400">
-          Regenerating or deleting takes effect immediately — there is no grace
+          Regenerating or deleting takes effect immediately. There is no grace
           period.
         </p>
       ) : null}
@@ -248,33 +239,20 @@ export function ApiKeyPanel({
         </pre>
         <p className="mt-2 text-xs text-gray-500">
           <code className="text-[11px]">externalOrderId</code> must be unique per
-          order — it is the idempotency guard, so retries never issue a duplicate
+          order. It is the idempotency guard, so retries never issue a duplicate
           reward.
         </p>
       </div>
 
       <div className="mt-4 border-t border-gray-200 pt-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-gray-600">
-            Delivering the reward on your success page
-          </p>
-          <CopyButton value={fiatSnippet} label="Copy snippet" />
-        </div>
-        <pre className="mt-2 min-w-0 overflow-x-auto rounded-xl bg-equixity-mist/70 p-3 text-[11px] leading-5">
-          <code>{fiatSnippet}</code>
-        </pre>
-        <p className="mt-2 text-xs text-gray-500">
-          Paste this into the page the customer lands on after paying, and replace{" "}
-          <code className="text-[11px]">{orderIdPlaceholder}</code> with the same
-          order id you reported above. Without the order id the page cannot find
-          the reward, and the customer is never offered it.
-        </p>
-        <p className="mt-2 text-xs text-gray-500">
-          Prefer not to add the snippet? The response you already get back
-          includes a <code className="text-[11px]">rewardEventId</code>. Send the
-          customer straight to{" "}
-          <code className="text-[11px]">{rewardPagePattern}</code> — that page
-          handles the whole hand-over.
+        <p className="text-xs text-gray-500">
+          After the payment, send the customer to your thank-you page with{" "}
+          <code className="text-[11px]">?order_id=</code> set to the same
+          externalOrderId you posted here. The snippet under the Your success
+          page panel reads it from the address. Skipping the snippet entirely? The
+          complete-card response already includes a{" "}
+          <code className="text-[11px]">rewardEventId</code>, so you can send
+          the customer straight to the hosted reward page.
         </p>
       </div>
     </div>

@@ -1,30 +1,37 @@
 /**
- * Equixity — Merchant notification SDK (reward-delivery spec section 3).
+ * Equixity: merchant notification SDK (reward-delivery spec section 3).
  *
- * Served statically at /equixity.js (public dir). Loaded by pasting ONE tag into
- * the merchant's own SUCCESS PAGE, the page the customer lands on after paying.
- * That is the only supported placement: there is no checkout-page snippet, and
- * there is no function for the merchant to call.
+ * Served statically at /equixity.js (public dir). Loaded by pasting ONE tag
+ * into the merchant's own SUCCESS PAGE, the page the customer lands on after
+ * paying. That is the only supported placement, and the tag carries nothing
+ * but the merchant's public id:
  *
- *   Fiat:
  *   <script src="https://equixity.app/equixity.js"
- *           data-merchant-id="MERCHANT_ID"
- *           data-order-id="EXTERNAL_ORDER_ID"></script>
+ *           data-merchant-id="MERCHANT_ID"></script>
  *
- *   Crypto:
- *   <script src="https://equixity.app/equixity.js"
- *           data-merchant-id="MERCHANT_ID"
- *           data-transaction-signature="TRANSACTION_SIGNATURE"></script>
+ * WHICH PURCHASE IS THIS PAGE ABOUT? The tag does not say, and nobody edits
+ * anything per order. The answer is in the customer's address bar, because
+ * that address is the one thing the checkout and the success page share:
  *
- * Exactly one of the two attributes, never both: it says which purchase this
- * page is about. Fiat then waits for the reward to be recorded (by the Stripe
- * webhook or the merchant's own backend); crypto asks Equixity to verify the
- * payment first, because nobody else has done it yet.
+ *   Stripe      ?session_id=cs_live_...  (Stripe fills the value in itself)
+ *   Flutterwave ?tx_ref=...              (Flutterwave appends it on redirect)
+ *   Own backend ?order_id=...
+ *
+ * Solana payments (dormant): ?signature=... is still accepted and verified on
+ * chain, but no setup or snippet for it is offered while crypto is not part
+ * of the product.
+ *
+ * Exactly one KIND of reference may be present. Both kinds at once, or
+ * neither, is a page that cannot name its purchase: the script explains that
+ * in the console and does nothing else. A payment whose address carries a
+ * non-success status value is a NORMAL outcome (Flutterwave sends cancelled
+ * payments to the same redirect address), so the script stays completely
+ * quiet for those.
  *
  * This is ALL that ever touches the merchant's page: a small, dismissible
  * badge saying a reward is waiting, linking to the hosted reward page at
  * /reward/{rewardEventId}. No checkbox, no wallet choice, no blocked message,
- * no eligibility logic of any kind lives here — the full flow runs on the
+ * no eligibility logic of any kind lives here; the full flow runs on the
  * hosted page under Equixity's own domain (spec sections 1 and 3a).
  *
  * The SDK deliberately CALCULATES NOTHING: the amount, asset name and reward
@@ -35,6 +42,10 @@
  * only validates shapes, calls /api/public/complete for the crypto path, polls
  * /api/public/reward-exists (existence only) for both paths, and renders the
  * badge.
+ *
+ * The reference is left in the address when we are done with it. Merchant
+ * pages legitimately read the same values (Stripe's own docs have the success
+ * page look the session up), so removing them could break their page.
  *
  * Cross-origin by design; the endpoints accept any origin with no credentials,
  * which is safe because they carry no session or cookies.
@@ -52,11 +63,19 @@
   // fix by trying again.
   var MAX_VERIFY_ATTEMPTS = 5;
 
+  // The purchase reference arrives in the page address. Fiat names, then the
+  // dormant Solana names.
+  var FIAT_PARAMS = ["session_id", "tx_ref", "order_id", "external_order_id"];
+  var CRYPTO_PARAMS = ["signature", "tx", "transaction_signature"];
+  // A pasted template value is never a real reference.
+  var PLACEHOLDER_RE = /^(ORDER_ID|TRANSACTION_SIGNATURE|\{[^}]*\})$/;
+  var SESSION_ID_RE = /^cs_(test|live)_[A-Za-z0-9]+$/;
+  // Flutterwave marks the redirect outcome with status; anything other than
+  // this value means the payment did not complete.
+  var SUCCESS_STATUS = "successful";
+
   function findOwnScriptTag() {
-    var candidates = document.querySelectorAll(
-      "script[data-merchant-id], script[data-order-id], " +
-        "script[data-transaction-signature]"
-    );
+    var candidates = document.querySelectorAll("script[data-merchant-id]");
     for (var i = 0; i < candidates.length; i++) {
       var src = candidates[i].getAttribute("src") || "";
       if (SCRIPT_MATCH.test(src)) return candidates[i];
@@ -66,16 +85,12 @@
 
   var tag = findOwnScriptTag();
   var merchantId = tag ? tag.getAttribute("data-merchant-id") : null;
-  var externalOrderId = tag ? tag.getAttribute("data-order-id") : null;
-  var transactionSignature = tag
-    ? tag.getAttribute("data-transaction-signature")
-    : null;
 
   if (!merchantId || merchantId.trim() === "") {
     console.error(
       "[Equixity] Missing or empty data-merchant-id attribute on the Equixity " +
-        'script tag. Paste the full snippet, e.g. <script src=".../equixity.js" ' +
-        'data-merchant-id="YOUR_MERCHANT_ID"></script>. '
+        'script tag. Paste the full snippet: <script src=".../equixity.js" ' +
+        'data-merchant-id="YOUR_MERCHANT_ID"></script>.'
     );
     return;
   }
@@ -125,7 +140,6 @@
       ".eqx-link{color:#1f2430;font-size:14px;line-height:1.4;" +
       "text-decoration:none;}" +
       ".eqx-link strong{color:#691280;}" +
-      ".eqx-link:hover{text-decoration:underline;}" +
       ".eqx-close{flex:none;width:22px;height:22px;border:0;border-radius:50%;" +
       "background:#f3eef5;color:#691280;font-size:13px;line-height:1;" +
       "cursor:pointer;}" +
@@ -173,29 +187,151 @@
   }
 
   // --- Which purchase is this page about? ------------------------------------
-  // Exactly one reference attribute, matching the snippet the merchant pasted.
-  var hasOrderId = !!externalOrderId && externalOrderId.trim() !== "";
-  var hasSignature =
-    !!transactionSignature && transactionSignature.trim() !== "";
-
-  if (hasOrderId && hasSignature) {
-    console.error(
-      "[Equixity] This page's Equixity tag has BOTH data-order-id and " +
-        "data-transaction-signature. Use exactly one: an order id for card " +
-        "payments, a transaction signature for Solana payments."
-    );
-    return;
+  // The reference lives in the page address, because that address is the one
+  // thing the checkout and this page share. Read from window.location.search,
+  // falling back to the href, so either harness or browser shape works.
+  function readAddressParams() {
+    var query = "";
+    try {
+      query = (window.location && window.location.search) || "";
+      if (!query && window.location && window.location.href) {
+        var q = String(window.location.href).indexOf("?");
+        if (q !== -1) query = String(window.location.href).slice(q);
+      }
+    } catch (e) {
+      query = "";
+    }
+    var out = [];
+    if (query.charAt(0) === "?") query = query.slice(1);
+    if (!query) return out;
+    var pairs = query.split("&");
+    for (var i = 0; i < pairs.length; i++) {
+      var eq = pairs[i].indexOf("=");
+      var name = eq === -1 ? pairs[i] : pairs[i].slice(0, eq);
+      var value = eq === -1 ? "" : pairs[i].slice(eq + 1);
+      try {
+        name = decodeURIComponent(name.replace(/\+/g, " "));
+        value = decodeURIComponent(value.replace(/\+/g, " "));
+      } catch (e) {
+        // A malformed escape must not take the whole page down.
+        continue;
+      }
+      out.push({ name: name, value: value });
+    }
+    return out;
   }
 
-  if (!hasOrderId && !hasSignature) {
-    console.error(
-      "[Equixity] This Equixity tag does not say which purchase the page is " +
-        "about, so no reward can be found. Add either " +
-        'data-order-id="..." (card payments) or ' +
-        'data-transaction-signature="..." (Solana payments).'
-    );
-    return;
+  // A pasted template value is never a real reference. Covers the old copy
+  // placeholders and any {LIKE_THIS} template token a merchant left verbatim.
+  function isPlaceholderLiteral(value) {
+    return PLACEHOLDER_RE.test(value);
   }
+
+  function findPurchaseReference() {
+    var params = readAddressParams();
+
+    // Flutterwave sends cancelled payments to the SAME redirect address with a
+    // status value. A non-success status is a normal outcome, not an error:
+    // stay completely quiet and make no requests at all.
+    for (var s = 0; s < params.length; s++) {
+      if (params[s].name === "status" && params[s].value !== SUCCESS_STATUS) {
+        return { kind: "cancelled" };
+      }
+    }
+
+    var fiatRefs = [];
+    var cryptoRefs = [];
+    var sawPlaceholder = null;
+    var sawMangled = false;
+
+    for (var i = 0; i < params.length; i++) {
+      var name = params[i].name;
+      var value = params[i].value;
+      if (!value || value.trim() === "") continue;
+      value = value.trim();
+
+      if (isPlaceholderLiteral(value)) {
+        sawPlaceholder = value;
+        continue;
+      }
+
+      var isCryptoName = CRYPTO_PARAMS.indexOf(name) !== -1;
+      var isFiatName = FIAT_PARAMS.indexOf(name) !== -1;
+      // A Stripe session id is recognizable by its shape wherever it hides:
+      // the parameter NAME is the merchant's choice, the cs_ prefix is not.
+      var looksLikeSessionId = SESSION_ID_RE.test(value);
+
+      if (name === "session_id" && !looksLikeSessionId && value.indexOf("session_id=") !== -1) {
+        // The placeholder was appended twice (e.g. ...?session_id=cs_1?session_id=cs_1),
+        // producing one mangled value. Polling it would quietly never work.
+        sawMangled = true;
+        continue;
+      }
+
+      if (isCryptoName) {
+        cryptoRefs.push(value);
+      } else if (isFiatName || looksLikeSessionId) {
+        fiatRefs.push({ value: value, shaped: looksLikeSessionId });
+      }
+    }
+
+    if (sawMangled) {
+      return {
+        kind: "error",
+        message:
+          "[Equixity] The session_id value in this page's address looks like it " +
+          "contains the placeholder twice. In your payment provider's redirect " +
+          "setting, the address should contain session_id={CHECKOUT_SESSION_ID} " +
+          "exactly once."
+      };
+    }
+
+    // A template token left verbatim is a setup mistake worth naming exactly.
+    if (fiatRefs.length === 0 && cryptoRefs.length === 0 && sawPlaceholder) {
+      return {
+        kind: "error",
+        message:
+          "[Equixity] The value \"" + sawPlaceholder + "\" in this page's address " +
+          "is a placeholder, not a real order reference. Your payment provider " +
+          "or checkout fills the real value in automatically when it redirects " +
+          "the customer here."
+      };
+    }
+
+    if (fiatRefs.length > 0 && cryptoRefs.length > 0) {
+      return {
+        kind: "error",
+        message:
+          "[Equixity] This page's address carries BOTH a card order reference and " +
+          "a Solana signature. Use exactly one kind per page."
+      };
+    }
+
+    if (fiatRefs.length > 0) {
+      // Prefer a well-formed Stripe session id when several names are present.
+      var shaped = null;
+      for (var f = 0; f < fiatRefs.length; f++) {
+        if (fiatRefs[f].shaped) { shaped = fiatRefs[f].value; break; }
+      }
+      return { kind: "fiat", orderId: shaped || fiatRefs[0].value };
+    }
+
+    if (cryptoRefs.length > 0) {
+      return { kind: "crypto", signature: cryptoRefs[0] };
+    }
+
+    return {
+      kind: "error",
+      message:
+        "[Equixity] This page's address does not say which purchase it is about, " +
+        "so no reward can be found. Your payment provider's redirect setting " +
+        "should send the customer here with the order reference in the address " +
+        '(Stripe: add session_id={CHECKOUT_SESSION_ID} to the redirect address; ' +
+        'Flutterwave adds tx_ref automatically; your own backend: ?order_id=...).'
+    };
+  }
+
+  var reference = findPurchaseReference();
 
   // --- The badge, once a claimable reward is known ---------------------------
   // The amount is passed through exactly as the backend reported it, so a
@@ -206,9 +342,13 @@
 
   // --- Fiat mode: wait for the reward to be recorded, then show the badge ----
   function buildRewardExistsUrl() {
-    var purchase = hasOrderId
-      ? "&externalOrderId=" + encodeURIComponent(externalOrderId)
-      : "&transactionSignature=" + encodeURIComponent(transactionSignature);
+    // Exactly one reference kind reaches this function (resolveReference
+    // refuses pages that carry both), and the existence endpoint accepts
+    // exactly one of the two params, so the kind decides the param.
+    var purchase =
+      reference.kind === "crypto"
+        ? "&transactionSignature=" + encodeURIComponent(reference.signature)
+        : "&externalOrderId=" + encodeURIComponent(reference.orderId);
     return (
       apiBase +
       "/api/public/reward-exists?merchantId=" +
@@ -243,7 +383,7 @@
     attempt();
   }
 
-  // --- Crypto mode: verify the payment, then show the badge ------------------
+  // --- Crypto mode (dormant): verify the payment, then show the badge --------
   // Nobody has verified this payment yet, so the script asks Equixity to. The
   // backend reads the amount from the chain, never from this page, and records
   // the reward against the wallet that paid (spec sections 2 and 4).
@@ -258,7 +398,7 @@
         // The ONLY things sent are the signature and the public merchant id.
         body: JSON.stringify({
           merchantId: merchantId,
-          transactionSignature: transactionSignature,
+          transactionSignature: reference.signature,
         }),
       })
         .then(function (res) {
@@ -279,8 +419,8 @@
             }
             return;
           }
-          // Already recorded, by an earlier load of this page or by the
-          // merchant's own backend: the reward is there, so go and find it.
+          // Already recorded, by an earlier load of this page: the reward is
+          // there, so go and find it.
           if (out.status === 409) {
             pollRewardExists();
             return;
@@ -312,8 +452,12 @@
 
   // --- Start, once the page is ready -----------------------------------------
   function start() {
-    if (hasSignature) verifyPayment();
-    else pollRewardExists();
+    if (reference.kind === "crypto") verifyPayment();
+    else if (reference.kind === "fiat") pollRewardExists();
+    // "cancelled" and "error" were already explained (or deliberately quiet).
+    if (reference.kind === "error" && reference.message) {
+      console.error(reference.message);
+    }
   }
 
   if (document.readyState === "loading") {

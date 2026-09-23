@@ -21,8 +21,8 @@ const sections = [
     detail: "The one script that turns a completed sale into a reward.",
   },
   {
-    title: "On-chain verification for Solana",
-    detail: "The setup for businesses already running on Solana.",
+    title: "Card processors",
+    detail: "Webhook setup for Stripe, Flutterwave, or your own checkout backend.",
   },
   {
     title: "API reference",

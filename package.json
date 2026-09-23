@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "verify:deposit-key-roundtrip": "tsx scripts/verify-deposit-key-roundtrip.ts"
+    "verify:deposit-key-roundtrip": "tsx scripts/verify-deposit-key-roundtrip.ts",
+    "test:widget": "node scripts/widget-test/widget.test.mjs",
+    "test:flutterwave": "tsx scripts/test-flutterwave-webhook.ts"
   },
   "dependencies": {
     "@privy-io/node": "^0.34.0",

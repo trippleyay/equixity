@@ -4,11 +4,13 @@ import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 
 /**
- * Fiat Path A setup (reward-delivery spec section 5): the merchant pastes one
- * URL into Stripe and pastes one secret back. Written in merchant language —
- * the whole integration is two copy-paste actions, no code anywhere.
+ * Flutterwave Path A setup (reward-delivery spec section 5, second provider).
+ * Written in merchant language: paste our webhook address into the Flutterwave
+ * dashboard, invent a secret hash and paste the SAME value into both places.
+ * Flutterwave appends the order reference to the redirect by itself, so there
+ * is no third step and nothing to fill in per order.
  */
-export function FiatWebhookPanel({
+export function FlutterwaveSetupPanel({
   webhookUrl,
   initialConfigured,
   initialUpdatedAt,
@@ -32,11 +34,14 @@ export function FiatWebhookPanel({
       const res = await fetch("/api/merchant/fiat-webhook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webhookSecret: secret.trim() }),
+        body: JSON.stringify({
+          webhookSecret: secret.trim(),
+          provider: "flutterwave",
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(json.error ?? "Could not save the secret. Please try again.");
+        setError(json.error ?? "Could not save the secret hash. Please try again.");
         return;
       }
       setConfigured(true);
@@ -53,15 +58,17 @@ export function FiatWebhookPanel({
     setError(null);
     setMessage(null);
     try {
-      const res = await fetch("/api/merchant/fiat-webhook", { method: "DELETE" });
+      const res = await fetch("/api/merchant/fiat-webhook?provider=flutterwave", {
+        method: "DELETE",
+      });
       if (!res.ok) {
-        setError("Could not remove the secret. Please try again.");
+        setError("Could not remove the secret hash. Please try again.");
         return;
       }
       setConfigured(false);
       setUpdatedAt(null);
       setMessage(
-        "Removed. Card rewards are switched off until you set it up again.",
+        "Removed. Card rewards from Flutterwave are switched off until you set it up again.",
       );
     } finally {
       setBusy(false);
@@ -72,7 +79,7 @@ export function FiatWebhookPanel({
     <div className="min-w-0 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-ink">
-          Card payments (Stripe)
+          Card payments (Flutterwave)
         </h2>
         {configured ? (
           <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
@@ -85,20 +92,15 @@ export function FiatWebhookPanel({
         )}
       </div>
       <p className="mt-1 text-xs text-gray-500">
-        Let customers pay with a card and still earn rewards. Two copy-paste
-        steps, no code.
+        Let customers pay by card, bank or mobile money and still earn rewards.
       </p>
 
       <ol className="mt-4 space-y-3 text-sm text-ink">
         <li>
-          <span className="font-medium">1.</span> In Stripe, go to{" "}
-          <span className="font-medium">Developers</span>, then{" "}
-          <span className="font-medium">Webhooks</span>, then{" "}
-          <span className="font-medium">Add endpoint</span>.
-        </li>
-        <li>
-          <span className="font-medium">2.</span> Paste this web address as the
-          endpoint URL:
+          <span className="font-medium">1.</span> In your Flutterwave
+          dashboard, go to <span className="font-medium">Settings</span>, then{" "}
+          <span className="font-medium">Webhooks</span>, and paste this
+          address as the webhook URL. Leave every event box ticked:
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <code className="min-w-0 break-all rounded-xl bg-equixity-mist/70 px-3 py-1.5 text-xs">
               {webhookUrl}
@@ -107,19 +109,16 @@ export function FiatWebhookPanel({
           </div>
         </li>
         <li>
-          <span className="font-medium">3.</span> Under events, select{" "}
-          <span className="font-medium">checkout.session.completed</span>.
-        </li>
-        <li>
-          <span className="font-medium">4.</span> Click Add endpoint, then copy
-          the signing secret Stripe shows you (it starts with{" "}
-          <code className="text-xs">whsec_</code>) and paste it here:
+          <span className="font-medium">2.</span> Invent a secret hash: any
+          long random string you make up. Paste the exact same value into the{" "}
+          <span className="font-medium">Secret hash</span> field in the
+          dashboard and here:
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <input
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder="Paste the signing secret (starts with whsec_)"
+              placeholder="Paste your secret hash (you choose the value)"
               autoComplete="off"
               disabled={busy}
               className="min-w-0 flex-1 rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink outline-none focus:border-equixity"
@@ -130,22 +129,17 @@ export function FiatWebhookPanel({
               disabled={busy || secret.trim() === ""}
               className="rounded-full bg-equixity px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Save secret
+              Save secret hash
             </button>
           </div>
         </li>
         <li>
-          <span className="font-medium">5.</span> Show the reward to the
-          customer. On the page Stripe sends them to after paying, paste the
-          snippet from the{" "}
-          <span className="font-medium">Your success page</span> panel, once.
-          The order reference arrives in the page address: if the redirect
-          address there already ends in{" "}
-          <code className="text-xs">?session_id=&#123;CHECKOUT_SESSION_ID&#125;</code>,
-          change nothing. If it does not, add that to the redirect address in
-          your payment link or checkout settings, or use{" "}
-          <code className="text-xs">&amp;session_id=...</code> when the address
-          already has a <code className="text-xs">?</code> in it.
+          <span className="font-medium">3.</span> Show the reward to the
+          customer: paste the snippet from the{" "}
+          <span className="font-medium">Your success page</span> panel onto
+          the page your <span className="font-medium">redirect_url</span>{" "}
+          already points to. There is nothing to add to it: Flutterwave
+          appends the order reference to the address by itself.
         </li>
       </ol>
 
@@ -158,8 +152,8 @@ export function FiatWebhookPanel({
             {updatedAt
               ? `Last updated ${new Date(updatedAt).toLocaleString()}.`
               : null}{" "}
-            The secret is stored securely and never shown again. To change it,
-            paste a new one and save.
+            The secret hash is stored securely and never shown again. To
+            change it, paste a new one and save.
           </p>
           <button
             type="button"
@@ -167,16 +161,15 @@ export function FiatWebhookPanel({
             disabled={busy}
             className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
           >
-            Remove secret
+            Remove secret hash
           </button>
         </div>
       )}
 
       <p className="mt-4 border-t border-ink/5 pt-4 text-xs text-slate">
-        Building your own checkout backend instead? Use the API key panel on
-        this page and skip these steps.
+        Only USD charges can create a reward. Charges in any other currency
+        are refused rather than converted.
       </p>
     </div>
   );
 }
-

@@ -2,7 +2,6 @@ import Hero from "@/components/home/Hero";
 import BusinessSteps from "@/components/home/BusinessSteps";
 import CustomerSteps from "@/components/home/CustomerSteps";
 import OwnershipCompare from "@/components/home/OwnershipCompare";
-import SolanaNote from "@/components/home/SolanaNote";
 import FinalCta from "@/components/home/FinalCta";
 
 export default function Home() {
@@ -12,7 +11,6 @@ export default function Home() {
       <BusinessSteps />
       <CustomerSteps />
       <OwnershipCompare />
-      <SolanaNote />
       <FinalCta />
     </>
   );

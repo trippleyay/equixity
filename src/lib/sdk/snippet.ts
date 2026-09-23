@@ -1,84 +1,40 @@
 import { env } from "@/lib/env";
 
 /**
- * SDK snippets (spec section 6). Each returns the <script> tag a merchant pastes
- * into their own SUCCESS PAGE. It carries ONLY the merchant's public ID — never
- * the internal primary key, never any secret (spec sections 2, 6, 8).
+ * SDK snippets (spec section 6): the <script> tag a merchant pastes into their
+ * own SUCCESS PAGE, the page the customer lands on after paying. It carries
+ * ONLY the merchant's public id, never the internal primary key, never any
+ * secret, and never a per-order value (spec sections 2, 6, 8).
  *
- * There is deliberately no checkout-page snippet. For both payment paths the
- * script belongs on the page the customer lands on AFTER paying, because that
- * is the page that can say which order was just placed. Nothing has to be
- * called from the merchant's own checkout code any more, so a merchant pastes
- * one tag and writes no code at all.
+ * One snippet serves every payment method. The purchase reference travels in
+ * the customer's page address instead of the tag, and each provider supplies
+ * it without the merchant editing anything per order:
  *
- * The base URL is env-driven so the copied snippet works against a local /
+ *   Stripe       the redirect address includes ?session_id={CHECKOUT_SESSION_ID},
+ *                a literal string Stripe replaces itself at redirect time.
+ *   Flutterwave  appends ?status=...&tx_ref=... to the redirect automatically.
+ *   Own backend  the merchant adds ?order_id= with the id they posted to
+ *                complete-card.
+ *
+ * There is deliberately no checkout-page snippet and no function for the
+ * merchant to call: the success page is the one page that can say which order
+ * was just placed, so one paste is the whole integration.
+ *
+ * The base URL is env-driven so the copied snippet works against a local or
  * preview deploy; it defaults to the production value from spec section 6.
  */
 const DEFAULT_SDK_BASE_URL = "https://equixity.vercel.app";
-
-/**
- * The order-id placeholder in the fiat snippet. It cannot be baked in: the value
- * differs per order, so the merchant's own success page has to render it.
- * Exported so the settings copy can name it exactly.
- */
-export const FIAT_ORDER_ID_PLACEHOLDER = "ORDER_ID";
-
-/**
- * The payment placeholder in the crypto snippet, same reasoning and the same
- * rule: one value per payment, rendered by the merchant's own success page.
- * It is the signature of the Solana payment the customer just made, which is
- * what on-chain verification reads the amount from.
- */
-export const CRYPTO_TRANSACTION_PLACEHOLDER = "TRANSACTION_SIGNATURE";
 
 function snippetBaseUrl(): string {
   return (env.nextPublicAppUrl || DEFAULT_SDK_BASE_URL).replace(/\/+$/, "");
 }
 
 /**
- * Crypto success-page snippet (spec sections 3, 4).
- *
- * The page says WHICH payment it belongs to with `data-transaction-signature`.
- * The script then verifies that payment on-chain, records the reward and shows
- * the badge, so the customer reaches the hosted reward page without the
- * merchant calling anything.
- *
- * The value must be the SAME transaction the purchase was paid with. With the
- * attribute absent the script finds no payment, does nothing, and the customer
- * never reaches the hosted reward page at all.
+ * The success-page snippet for every payment method. No per-order values:
+ * the page address carries the purchase reference (see module comment).
  */
-export function buildCryptoSdkSnippet(publicId: string): string {
-  const base = snippetBaseUrl();
-  return [
-    `<script src="${base}/equixity.js"`,
-    `        data-merchant-id="${publicId}"`,
-    `        data-transaction-signature="${CRYPTO_TRANSACTION_PLACEHOLDER}"></script>`,
-  ].join("\n");
-}
-
-/**
- * Fiat success-page snippet (spec sections 3, 5) — the crypto snippet with
- * `data-order-id` instead of `data-transaction-signature`, and the difference
- * is not cosmetic.
- *
- * On fiat the purchase was already recorded by a Stripe webhook or by the
- * merchant's own backend, so the page only has to say WHICH order it is and
- * wait for the reward to show up. `data-order-id` is how. With the attribute
- * absent the script finds no order, does nothing, and the customer never
- * reaches the hosted reward page at all.
- *
- * The order id must be the SAME value the reward was recorded against:
- *   * Path A (Stripe)  -> the Checkout Session id, i.e. what Stripe sends as
- *                         session.id on checkout.session.completed;
- *   * Path B (own API) -> the externalOrderId that was posted.
- */
-export function buildFiatSdkSnippet(publicId: string): string {
-  const base = snippetBaseUrl();
-  return [
-    `<script src="${base}/equixity.js"`,
-    `        data-merchant-id="${publicId}"`,
-    `        data-order-id="${FIAT_ORDER_ID_PLACEHOLDER}"></script>`,
-  ].join("\n");
+export function buildSuccessPageSnippet(publicId: string): string {
+  return `<script src="${snippetBaseUrl()}/equixity.js" data-merchant-id="${publicId}"></script>`;
 }
 
 /**

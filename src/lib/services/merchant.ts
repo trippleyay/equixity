@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { getServiceClient } from "@/lib/supabase/service";
 import { settingsSchema, type SettingsInput } from "@/lib/validation/settings";
-import { buildCryptoSdkSnippet, buildFiatSdkSnippet } from "@/lib/sdk/snippet";
+import { buildSuccessPageSnippet } from "@/lib/sdk/snippet";
 import { listActiveAssets, type RewardAsset } from "@/lib/services/assets";
 
 /**
@@ -38,23 +38,14 @@ export type Settings = {
 };
 
 /**
- * The crypto success-page snippet. A merchant pastes this into the page the
- * customer lands on after paying, and nothing else: the script verifies the
- * payment itself. See lib/sdk/snippet.ts.
+ * The success-page snippet. ONE tag for every payment method (Stripe,
+ * Flutterwave, or the merchant's own backend), pasted once into the page the
+ * customer lands on after paying. It carries nothing but the merchant's public
+ * id: the purchase reference travels in the customer's page address, which
+ * each provider supplies on its own. See lib/sdk/snippet.ts.
  */
 export function getSdkSnippet(publicId: string): string {
-  return buildCryptoSdkSnippet(publicId);
-}
-
-/**
- * The fiat success-page snippet. Same page, same single paste, but it carries
- * `data-order-id` instead: a fiat customer's browser knows nothing about the
- * purchase (the reward was recorded by Stripe or the merchant's own backend),
- * so without that attribute the badge finds no order and the customer never
- * reaches the hosted reward page. See lib/sdk/snippet.ts.
- */
-export function getFiatSdkSnippet(publicId: string): string {
-  return buildFiatSdkSnippet(publicId);
+  return buildSuccessPageSnippet(publicId);
 }
 
 export async function getSettings(merchantId: string): Promise<Settings> {

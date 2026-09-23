@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMerchantIdByPublicId } from "@/lib/services/reward-delivery";
-import { loadDecryptedWebhookSecret } from "@/lib/services/stripe-webhook-secret";
+import { loadDecryptedWebhookSecret } from "@/lib/services/merchant-webhook-secrets";
 import { recordPurchaseAndReward } from "@/lib/services/completion";
 import { getPublicMerchantContext } from "@/lib/services/public-merchant";
 import { verifyStripeSignature } from "@/lib/solana/stripe-signature";
