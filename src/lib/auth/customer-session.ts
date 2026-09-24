@@ -19,9 +19,24 @@
  *
  * WHY BOTH: the identity token is the cheap path, but it only exists on some
  * app configurations, and this page broke live with
- * `GET auth.privy.io/api/v1/users/me 429` coming from the browser. That 429 came
- * from asking Privy for an identity token, not from signing in, so the token the
- * browser always holds is now enough on its own.
+ * `GET auth.privy.io/api/v1/users/me 429` coming from the browser. That 429 was
+ * not a sign-in failure and not a read of the identity token: it was the
+ * browser ASKING for one. In @privy-io/react-auth the exported
+ * `getIdentityToken()` runs `updateUserAndIdToken()`, which is a fetch of that
+ * exact route, and the client used to poll it. The token the browser always
+ * holds is now enough on its own, so nothing in the browser asks Privy for
+ * anything.
+ *
+ * WHAT EACH PATH COSTS, checked against the installed @privy-io/node 0.34
+ * source rather than assumed:
+ *
+ *   * `privy.users().get({ id_token })` and `privy.utils().auth()
+ *     .verifyAccessToken(...)` are both LOCAL: they verify the JWT with jose
+ *     against the app's JWKS, which the client caches for an hour. Zero API
+ *     requests, which is why the client is built once per process below;
+ *   * `privy.users()._get(userId)` is the only real request
+ *     (`GET /api/v1/users/:id`, app-secret auth). One per resolved user per
+ *     minute, because Privy rate limits per endpoint.
  *
  * A returning customer who signs in with the SAME email gets the SAME Privy user
  * and therefore the SAME wallet, which is what makes a second reward land
@@ -49,12 +64,33 @@ function solanaAddressFromUser(user: unknown): string | null {
   return null;
 }
 
-function buildClient(): PrivyClient | null {
+/**
+ * The Privy client, built ONCE per server process.
+ *
+ * WHY IT IS NOT BUILT PER REQUEST: the client owns the app's JWKS, and both of
+ * the verification paths hang off it (`verifyAccessToken` for the access token,
+ * `users().get({ id_token })` for the identity token). jose caches the fetched
+ * key set on that object for an hour, but a NEW client starts with an empty
+ * cache, so a client per request means a fresh
+ * `GET auth.privy.io/v1/apps/<appId>/jwks.json` on every call, including the
+ * ones that are supposed to cost nothing. Privy rate limits its API per
+ * endpoint, so that extra request per call is self-inflicted traffic of exactly
+ * the kind that turns a working page into a 429. One client per process reuses
+ * the cached key set, which is what keeps the local-verification paths local.
+ *
+ * A missing env is deliberately NOT cached, so a process that starts before the
+ * env is present can still pick it up later instead of remembering the failure.
+ */
+let cachedClient: PrivyClient | null = null;
+
+function privyClient(): PrivyClient | null {
+  if (cachedClient) return cachedClient;
   if (!env.nextPublicPrivyAppId || !env.privyAppSecret) return null;
-  return new PrivyClient({
+  cachedClient = new PrivyClient({
     appId: env.nextPublicPrivyAppId,
     appSecret: env.privyAppSecret,
   });
+  return cachedClient;
 }
 
 /**
@@ -86,7 +122,7 @@ const addressCache = new Map<string, { address: string; expiresAt: number }>();
 export async function resolveCustomerWallet(
   input: Request | Record<string, unknown>,
 ): Promise<CustomerSession> {
-  const privy = buildClient();
+  const privy = privyClient();
   if (!privy) {
     return { error: "Sign-in is not available right now.", status: 503 };
   }

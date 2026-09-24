@@ -155,13 +155,14 @@ export function RewardClaimPanel({
   //
   //   GET auth.privy.io/api/v1/users/me 429 (Too Many Requests)
   //
-  // That request is Privy's OWN browser-side fetch, made while obtaining an
-  // IDENTITY token, and Privy rate limits its API per endpoint (docs.privy.io,
-  // "Optimize your setup" > "Handling rate limits"). So the token the previous
-  // version waited on was a token Privy was refusing to hand over, and polling
-  // for it re-asked the refusing endpoint on every attempt. Nothing about that
-  // was a sign-in failure, and the customer was told "we could not confirm your
-  // sign-in" on a page they had just reached from a paid checkout.
+  // That request is not a sign-in call, and it is not the identity token being
+  // read: it is the installed SDK's own fetch, and it can be traced exactly. In
+  // @privy-io/react-auth 3.44 the exported `getIdentityToken()` runs
+  // `updateUserAndIdToken()`, which is literally
+  // `this.api.get("/api/v1/users/me")`; `useUser().refreshUser()` calls that
+  // same method. Nothing else in the browser bundle asks for that route, so the
+  // only thing being rate limited was our own polling of `getIdentityToken()`,
+  // on a page a customer had just paid on.
   //
   // THE FIX IS TO STOP ASKING PRIVY FOR A SECOND TOKEN. The ACCESS token is
   // already in the browser the moment a session exists, it is the exact token
@@ -169,7 +170,13 @@ export function RewardClaimPanel({
   // calling Privy. Our server then reads the wallet from Privy itself, once,
   // with the app secret, and caches it for a minute. The identity token is still
   // sent when the store happens to hold one, because the server prefers it (it
-  // costs no API call at all), but nothing depends on it any more.
+  // verifies that token in-process against the app's JWKS, so it costs no Privy
+  // API call at all), but nothing depends on it any more.
+  //
+  // READING IS NOT THE SAME AS ASKING: `useIdentityToken()` is a plain store
+  // selector in this SDK version, not a fetch. `useUser().refreshUser()` and
+  // the imperative `getIdentityToken()` are the two calls that cost a request,
+  // and this page uses neither.
   //
   // SINGLE-FLIGHT: one resolve in flight at a time, so clicking twice cannot
   // stack requests.
@@ -222,12 +229,23 @@ export function RewardClaimPanel({
         identityTokenRef.current ?? null,
       );
 
-      // One retry, and only for a token that is not ready yet: a brand new
-      // session can be a beat behind, and a freshly created account can be a
-      // beat ahead of its embedded wallet. Both heal on their own. A 503 (Privy
-      // briefly unreachable) or a rejected token is reported as it is.
-      if (!result.ok && (result.status === 401 || result.status === 422)) {
-        await new Promise((r) => setTimeout(r, 900));
+      // AT MOST one retry, and only for a status that heals on its own:
+      //
+      //   * 401 / 422 - a brand new session can be a beat behind, and a freshly
+      //     created account can be a beat ahead of its embedded wallet;
+      //   * 503 - our server could not reach Privy this once. A customer who has
+      //     already paid must not lose the reward to a moment of Privy being
+      //     busy, and ONE retry two seconds later is not the polling that caused
+      //     this page's original 429.
+      //
+      // Two attempts in total, never a loop. Anything after that is reported to
+      // the customer as it is, in the server's own words.
+      const retryable =
+        result.status === 401 || result.status === 422 || result.status === 503;
+      if (!result.ok && retryable) {
+        await new Promise((r) =>
+          setTimeout(r, result.status === 503 ? 2_000 : 900),
+        );
         result = await post(
           await freshAccessToken(),
           identityTokenRef.current ?? null,
