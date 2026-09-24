@@ -71,7 +71,6 @@ export function RewardClaimPanel({
   attestationText: string;
 }) {
   const { ready, authenticated } = usePrivy();
-  const { login: openLogin } = useLogin();
 
   const [state, setState] = useState<StatusState>({ kind: "loading" });
   const [attested, setAttested] = useState(false);
@@ -158,19 +157,36 @@ export function RewardClaimPanel({
     resolvingRef.current = true;
     setWalletError(null);
 
+    /**
+     * Privy's `getIdentityToken()` does NOT throw when it cannot produce a
+     * token. Its implementation is:
+     *
+     *   return await yi?.updateUserAndIdToken(),
+     *          useServerCookies ? store.identityToken : (store.token || null)
+     *
+     * so a missing or not-yet-ready token arrives as a plain `null`. The
+     * previous code only retried inside `catch`, which therefore never ran, and
+     * a `null` went straight to the customer as "we could not confirm your
+     * sign-in". That is why the button looked broken: the token is not in the
+     * store at the instant login completes, and we asked once and gave up.
+     *
+     * So: poll. `null` is the retryable condition, not an exception, and we
+     * wait for Privy to finish writing the token into its store.
+     */
     const fetchIdentityToken = async (): Promise<string | null> => {
-      // getIdentityToken() has no response object, so a rate limit surfaces as a
-      // rejection. Retry once after a pause rather than failing the customer.
-      try {
-        return await getIdentityToken();
-      } catch {
-        await new Promise((r) => setTimeout(r, 1200));
+      for (let attempt = 0; attempt < 12; attempt++) {
+        // Privy rate-limits its own API; backing off here is the whole point.
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, Math.min(400 * attempt, 2000)));
+        }
         try {
-          return await getIdentityToken();
+          const token = await getIdentityToken();
+          if (token) return token;
         } catch {
-          return null;
+          // A thrown error is treated exactly like null: keep polling.
         }
       }
+      return null;
     };
 
     try {
@@ -235,6 +251,41 @@ export function RewardClaimPanel({
    * 3. Genuinely signed out: open the Privy modal, which creates the embedded
    *    Solana wallet on completion.
    */
+  /**
+   * `useLogin().login()` accepts callbacks, and `onComplete` is the one that
+   * matters here. The previous code called `openLogin()` and then relied on a
+   * 4-second timer to clear the busy label, with no completion handler at all.
+   * That is why a real sign-in went nowhere: the modal opened, the customer
+   * signed in, Privy created the wallet, and we never asked for the token
+   * afterwards. `onComplete` (plus `onError`, so a failure is visible) closes
+   * that loop.
+   */
+  /**
+   * `useLogin(callbacks)` is where the completion handlers live; `login()` itself
+   * only takes modal options. The JSDoc on the installed types is explicit:
+   * "callbacks.onComplete ... callback to execute for already- or newly-
+   * authenticated users" and "callbacks.onError ... if there is an error during
+   * login".
+   *
+   * Passing them to `openLogin()` does not typecheck, and the previous version
+   * passed NO handler at all: the modal opened, the customer signed in, Privy
+   * created the wallet, and nothing afterwards asked for the token. That is the
+   * second half of why the button appeared dead.
+   */
+  const { login: openLogin } = useLogin({
+    onComplete: () => {
+      setSigningIn(false);
+      // The session exists now. The token itself is polled for, because Privy
+      // writes it to its store a moment after login completes rather than
+      // synchronously with this callback.
+      void resolveWallet();
+    },
+    onError: () => {
+      setSigningIn(false);
+      setWalletError("We could not sign you in just now. Please try again.");
+    },
+  });
+
   const signIn = useCallback(() => {
     setWalletError(null);
 
@@ -251,9 +302,9 @@ export function RewardClaimPanel({
 
     setSigningIn(true);
     openLogin();
-    // Safety: clear the busy label even if the modal is dismissed without a
-    // completion event, so the button can never stay stuck on "Opening...".
-    setTimeout(() => setSigningIn(false), 4000);
+    // Safety: never leave the label stuck on "Opening..." if the modal is
+    // dismissed without firing either callback above.
+    setTimeout(() => setSigningIn(false), 8000);
   }, [ready, authenticated, openLogin, resolveWallet]);
 
   const confirm = useCallback(() => {
