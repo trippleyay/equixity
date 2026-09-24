@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 /** The one surface that IS the merchant product, so it names itself as such. */
 export const metadata: Metadata = {
-  title: "Equixity - Merchant",
+  title: "Merchant - Equixity",
 };
 
 export default async function DashboardLayout({

@@ -57,11 +57,22 @@
   // Bounded work per page load: after this many attempts the badge gives up
   // quietly. A payment that never lands should not hammer anything forever.
   var MAX_POLLS = 60;
-  var POLL_MS = 3000;
+  // A processor webhook normally lands within a second or two of the customer
+  // reaching the success page, so the schedule starts tight and relaxes. A flat
+  // 3s from the first attempt meant a reward that was already recorded could sit
+  // unseen for 3 seconds for no reason, which is the whole wait the customer
+  // notices. Delays are in ms per attempt: 300, 600, 900, 1200, then 2000 flat.
+  var POLL_SCHEDULE = [300, 600, 900, 1200];
+  var POLL_MS = 2000;
   // Crypto only: verification may simply be a moment behind the chain, so a
   // few retries are worth it. Anything past this is a payment this page cannot
   // fix by trying again.
   var MAX_VERIFY_ATTEMPTS = 5;
+
+  /** Delay before attempt N (1-based): tight early, relaxed after. */
+  function pollDelay(attempt) {
+    return POLL_SCHEDULE[attempt - 1] || POLL_MS;
+  }
 
   // The purchase reference arrives in the page address. Fiat names, then the
   // dormant Solana names.
@@ -373,13 +384,15 @@
             onRewardFound(json);
             return;
           }
-          setTimeout(attempt, POLL_MS);
+          setTimeout(attempt, pollDelay(attempts));
         })
         .catch(function () {
           // Transient network failure: keep looking until the bound.
-          setTimeout(attempt, POLL_MS);
+          setTimeout(attempt, pollDelay(attempts));
         });
     }
+    // Check immediately: if the webhook already landed, the badge appears with
+    // no delay at all rather than waiting out a first interval.
     attempt();
   }
 

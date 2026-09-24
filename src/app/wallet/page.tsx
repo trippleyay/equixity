@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Your rewards - Equixity",
+  title: "Customer Rewards - Equixity",
   description: "The stock you have earned, and where to send it.",
 };
 

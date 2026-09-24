@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   usePrivy,
   useLogin,
-  useIdentityToken,
+  getIdentityToken,
 } from "@privy-io/react-auth";
 
 /**
@@ -72,7 +72,6 @@ export function RewardClaimPanel({
 }) {
   const { ready, authenticated } = usePrivy();
   const { login: openLogin } = useLogin();
-  const { identityToken } = useIdentityToken();
 
   const [state, setState] = useState<StatusState>({ kind: "loading" });
   const [attested, setAttested] = useState(false);
@@ -136,28 +135,47 @@ export function RewardClaimPanel({
 
   // Privy: once signed in, resolve the Solana address SERVER-SIDE from the
   // identity token. The browser is never the trusted source for the address.
-  useEffect(() => {
-    if (!identityToken || privyResolved) return;
-    fetch("/api/public/privy-wallet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken: identityToken }),
-    })
-      .then((r) =>
-        r.ok ? r.json() : Promise.reject(new Error("verify failed")),
-      )
-      .then((json) => {
-        if (json?.address) {
-          setPrivyResolved(json.address);
-          setWalletError(null);
-        }
-      })
-      .catch(() =>
+  //
+  // `getIdentityToken()` (imperative) rather than the `useIdentityToken` hook:
+  // the hook is populated during render and does not re-fire reliably when a
+  // session is RESTORED after mount, which is exactly the returning-customer
+  // case. Calling it imperatively on demand always returns a fresh token.
+  const resolveWallet = useCallback(async () => {
+    setWalletError(null);
+    try {
+      const idToken = await getIdentityToken();
+      if (!idToken) {
         setWalletError(
-          "We could not verify your sign-in. Please try the email option again.",
-        ),
-      );
-  }, [identityToken, privyResolved]);
+          "We could not confirm your sign-in. Please try again.",
+        );
+        return;
+      }
+      const res = await fetch("/api/public/privy-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+      if (!res.ok) throw new Error("verify failed");
+      const json = await res.json();
+      if (json?.address) {
+        setPrivyResolved(json.address);
+        setWalletError(null);
+      } else {
+        setWalletError("We could not verify your sign-in. Please try again.");
+      }
+    } catch {
+      setWalletError("We could not verify your sign-in. Please try again.");
+    }
+  }, []);
+
+  // If Privy already has a restored session, resolve the wallet on mount so a
+  // returning customer never has to press anything. The call is deferred to a
+  // task so the effect body performs no synchronous setState of its own.
+  useEffect(() => {
+    if (!ready || !authenticated || privyResolved) return;
+    const timer = setTimeout(() => void resolveWallet(), 0);
+    return () => clearTimeout(timer);
+  }, [ready, authenticated, privyResolved, resolveWallet]);
 
   const walletValidationError = useCallback(
     (value: string): string | null => {
@@ -172,33 +190,38 @@ export function RewardClaimPanel({
   );
 
   /**
-   * Why not just `usePrivy().login()`: Privy PERSISTS a session, so on any
-   * return visit the user is already authenticated and `login()` refuses to
-   * re-open the modal. It only logs "Attempted to log in, but user is already
-   * logged in" to the console and does nothing, which is a dead button for every
-   * customer who has claimed before. Observed live on the hosted reward page.
+   * Three cases, and every one of them now gives the customer SOMETHING:
    *
-   * So: if Privy already has a session, skip straight to resolving the wallet
-   * (the effect below picks up identityToken and delivery continues). Only open
-   * the modal when there is genuinely no session.
+   * 1. Privy still initialising: wait for it and retry, instead of returning
+   *    silently (the previous `if (!ready) return` made the button look dead
+   *    whenever Privy was slow, with no console output and no UI change).
+   * 2. Already signed in: Privy PERSISTS sessions, so `login()` refuses to
+   *    re-open the modal and only logs "Attempted to log in, but user is
+   *    already logged in" to the console. Observed live. Resolve the wallet
+   *    from the existing session and let delivery continue.
+   * 3. Genuinely signed out: open the Privy modal, which creates the embedded
+   *    Solana wallet on completion.
    */
   const signIn = useCallback(() => {
     setWalletError(null);
-    if (!ready) return; // Privy still restoring; nothing to do yet.
-    if (authenticated) {
-      // No modal needed. The identity-token effect resolves the wallet.
-      setWalletError(null);
+
+    if (!ready) {
+      setWalletError("Still getting things ready. Tap again in a moment.");
       return;
     }
-    setSigningIn(true);
-    try {
-      openLogin();
-    } finally {
-      // The modal is asynchronous; this only clears the button's busy state
-      // rather than holding it forever.
-      setTimeout(() => setSigningIn(false), 1500);
+
+    if (authenticated) {
+      setSigningIn(true);
+      void resolveWallet().finally(() => setSigningIn(false));
+      return;
     }
-  }, [ready, authenticated, openLogin]);
+
+    setSigningIn(true);
+    openLogin();
+    // Safety: clear the busy label even if the modal is dismissed without a
+    // completion event, so the button can never stay stuck on "Opening...".
+    setTimeout(() => setSigningIn(false), 4000);
+  }, [ready, authenticated, openLogin, resolveWallet]);
 
   const confirm = useCallback(() => {
     if (state.kind !== "ready") return;
@@ -397,7 +420,7 @@ export function RewardClaimPanel({
           */}
           <p className="mb-3 text-sm text-slate">
             Create an Equixity wallet with your email, or sign in to the one you
-            already have. Your reward goes straight to it.
+            already have.
           </p>
           <button
             type="button"
