@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "verify:deposit-key-roundtrip": "tsx scripts/verify-deposit-key-roundtrip.ts",
     "verify:privy-resolve": "tsx scripts/verify-privy-resolve.ts",
+    "verify:reward-swap-rent": "tsx scripts/verify-reward-swap-rent.ts",
     "test:widget": "node scripts/widget-test/widget.test.mjs",
     "test:flutterwave": "tsx scripts/test-flutterwave-webhook.ts"
   },

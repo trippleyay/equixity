@@ -23,8 +23,9 @@ import {
   buildSwapInstructions,
   quoteUsdcToAsset,
   toTransactionInstruction,
+  withFeePayerPayingAtaRent,
 } from "@/lib/solana/jupiter";
-import { resolveOutcome } from "@/lib/solana/withdraw";
+import { describeFailureSignature, resolveOutcome } from "@/lib/solana/withdraw";
 import { getClaimForExecution } from "@/lib/services/claims";
 
 /**
@@ -280,6 +281,18 @@ export async function executeRewardClaim(params: {
       ...(instructions.cleanupInstruction ? [instructions.cleanupInstruction] : []),
     ].map(toTransactionInstruction);
 
+    // THE MERCHANT HOLDING NO SOL MUST NOT BREAK THE SWAP. Jupiter's setup
+    // instruction names the merchant's deposit wallet as the rent payer for the
+    // asset's token account, and that wallet holds USDC and zero SOL by design.
+    // Observed on chain for the live AAPLx swap: the ATA creation aborted with
+    // "Transfer: insufficient lamports 0, need 1559560" and the broadcast
+    // transaction failed, which surfaced to the customer as "the swap did not
+    // confirm" and pointed at nothing. See withFeePayerPayingAtaRent.
+    const preparedInstructions = withFeePayerPayingAtaRent(
+      allInstructions,
+      feePayer.publicKey,
+    );
+
     const lookupTables = await loadLookupTables(
       instructions.addressLookupTableAddresses ?? [],
     );
@@ -295,11 +308,32 @@ export async function executeRewardClaim(params: {
     const message = new TransactionMessage({
       payerKey: feePayer.publicKey,
       recentBlockhash: latest.blockhash,
-      instructions: allInstructions,
+      instructions: preparedInstructions,
     }).compileToV0Message(lookupTables);
 
     const tx = new VersionedTransaction(message);
     tx.sign([depositKeypair, feePayer]);
+
+    // SIMULATE BEFORE BROADCASTING. skipPreflight below is deliberate on this
+    // path, but it also means a transaction that can never succeed is sent and
+    // fails on chain: a fee burned, a slot used, and an on-chain failure to
+    // explain from logs later. One simulation turns that into a precise error
+    // naming the program that refused, before anything leaves this process, and
+    // the caller already refunds the reserve for a build-or-broadcast failure.
+    const simulation = await conn.simulateTransaction(tx);
+    if (simulation.value.err) {
+      const logs = simulation.value.logs ?? [];
+      const refusal = logs
+        .filter((line) =>
+          /insufficient|Transfer:|custom program error|failed/i.test(line),
+        )
+        .slice(-1)[0];
+      throw new Error(
+        refusal
+          ? `simulation failed: ${refusal}`
+          : `simulation failed: ${JSON.stringify(simulation.value.err)}`,
+      );
+    }
 
     swapSignature = await conn.sendRawTransaction(tx.serialize(), {
       skipPreflight: true,
@@ -341,17 +375,26 @@ export async function executeRewardClaim(params: {
     if (verdict === "confirmed") {
       // It did land — fall through to the delivery leg.
     } else if (verdict === "notlanded") {
-      // The USDC never left, so release the reserve.
+      // "Not landed" here covers two different realities, and the chain can tell
+      // them apart: a signature that exists WITH an error did execute and failed,
+      // a signature that does not exist never executed at all. Both mean the
+      // reserve should be released, because the USDC never left, but only one of
+      // them can be explained. Record what the chain actually said instead of the
+      // vague "did not confirm" that sent a real debugging session chasing the
+      // wrong wallet.
+      const onChain = await describeFailureSignature(swapSignature);
       await failClaim(
         claimId,
         exec.merchant_id,
         exec.reward_usdc_units,
-        "swap_not_confirmed_on_chain",
+        `swap_not_confirmed_on_chain: ${onChain ?? "no on-chain trace"}`,
       );
       return {
         status: "failed",
         signature: swapSignature,
-        reason: "The swap did not confirm, so the reward was returned to the merchant.",
+        reason: onChain
+          ? `The swap failed on chain (${onChain}), so the reward was returned to the merchant.`
+          : "The swap did not confirm, so the reward was returned to the merchant.",
       };
     } else {
       // Indeterminate: leave it in 'claiming'. Refunding here could pay twice if

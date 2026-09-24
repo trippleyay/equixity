@@ -1,4 +1,5 @@
 import { PublicKey, TransactionInstruction } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { env } from "@/lib/env";
 import { USDC_MINT } from "@/lib/solana/constants";
 
@@ -205,4 +206,41 @@ export function toTransactionInstruction(ix: JupiterInstruction): TransactionIns
     })),
     data: Buffer.from(ix.data, "base64"),
   });
+}
+
+/**
+ * Repoint the ATA program's rent payer at the Equixity fee payer.
+ *
+ * WHY THIS EXISTS, measured on chain and not assumed. Jupiter's setup
+ * instructions create the OUTPUT asset's token account for whoever the swap was
+ * built for, and they name that same wallet as the rent payer. The merchant's
+ * deposit wallet holds USDC and no SOL (it is not supposed to need any), so the
+ * instruction aborted with
+ *
+ *   Transfer: insufficient lamports 0, need 1559560
+ *
+ * and failed the whole swap AFTER it had been broadcast, which cost a fee, a
+ * slot, and a customer-facing "the swap did not confirm" that pointed at the
+ * wrong wallet entirely.
+ *
+ * The ATA program takes its payer as account 0, and any signer may be that
+ * payer, so account 0 alone is repointed at the fee payer: the wallet that
+ * already pays every network fee here and holds the small SOL float for rent.
+ * The account's OWNER is untouched, so the swapped asset still lands in the
+ * merchant's deposit wallet. Only instructions from the ATA program are touched,
+ * and only their first key.
+ */
+export function withFeePayerPayingAtaRent(
+  instructions: TransactionInstruction[],
+  feePayer: PublicKey,
+): TransactionInstruction[] {
+  return instructions.map((ix) =>
+    ix.programId.equals(ASSOCIATED_TOKEN_PROGRAM_ID) && ix.keys.length > 0
+      ? new TransactionInstruction({
+          programId: ix.programId,
+          data: ix.data,
+          keys: [{ ...ix.keys[0], pubkey: feePayer }, ...ix.keys.slice(1)],
+        })
+      : ix,
+  );
 }

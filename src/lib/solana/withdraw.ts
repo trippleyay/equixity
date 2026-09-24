@@ -291,3 +291,51 @@ export async function resolveOutcome(
   }
 }
 export type Outcome = "confirmed" | "notlanded" | "indeterminate";
+
+/**
+ * WHAT THE CHAIN SAID WHEN A SIGNATURE FAILED, or null when the signature
+ * succeeded or does not exist on chain at all.
+ *
+ * `resolveOutcome` deliberately collapses "landed and failed" and "never landed"
+ * into one verdict, because both mean the transfer did not happen and the money
+ * must be released either way. That is right for the LEDGER and wrong for the
+ * RECORD: a failure that landed has an error, a program, and usually a log line
+ * naming the real cause, and reporting it as "did not confirm" sends whoever
+ * reads the row looking at the wrong thing. Live example: a reward swap that
+ * failed because the rent payer held no SOL was recorded for hours as an
+ * unconfirmed swap.
+ *
+ * Returns a short human-readable string, never throws.
+ */
+export async function describeFailureSignature(
+  signature: string,
+): Promise<string | null> {
+  const conn = getSolanaConnection();
+  try {
+    const { value } = await conn.getSignatureStatuses([signature], {
+      searchTransactionHistory: true,
+    });
+    const status = value?.[0];
+    if (!status?.err) return null;
+
+    const errText = JSON.stringify(status.err);
+    const tx = await conn.getTransaction(signature, {
+      maxSupportedTransactionVersion: 0,
+      commitment: "confirmed",
+    });
+    const logs = tx?.meta?.logMessages ?? [];
+    // Prefer the line that names the CAUSE ("Transfer: insufficient lamports 0,
+    // need 1559560") over the program's own generic "failed" line, which is the
+    // difference between a reason someone can act on and one they cannot.
+    const clue =
+      logs.find((line) => /insufficient lamports/i.test(line)) ??
+      logs
+        .filter((line) =>
+          /insufficient|Transfer:|custom program error|failed/i.test(line),
+        )
+        .slice(-1)[0];
+    return clue ? `${errText}, ${clue.replace(/^Program log: /, "")}` : errText;
+  } catch {
+    return null;
+  }
+}
