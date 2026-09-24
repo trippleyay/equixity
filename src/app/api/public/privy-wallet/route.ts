@@ -1,60 +1,85 @@
 import { NextResponse } from "next/server";
 import { ipAddress } from "@vercel/functions";
-import { PrivyClient } from "@privy-io/node";
-import { env } from "@/lib/env";
+import { resolveCustomerWallet } from "@/lib/auth/customer-session";
 import { checkPrivyVerifyRateLimit, clientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/public/privy-wallet — resolve the Solana address behind a Privy login.
+ * POST /api/public/privy-wallet - resolve the Solana address behind a Privy login.
  *
  * WHY THIS EXISTS: the Privy React SDK creates/resolves an embedded Solana wallet
- * client-side, and the browser knows the address — but the browser is not a
+ * client-side, and the browser knows the address - but the browser is not a
  * trusted source for the destination of real money. This endpoint verifies the
- * Privy access token SERVER-SIDE and reads the linked wallet address from
- * Privy's own response, so a caller cannot simply claim "my wallet is X" for
- * someone else's address without a valid token for that user.
+ * Privy token SERVER-SIDE and reads the linked wallet address from Privy's own
+ * response, so a caller cannot simply claim "my wallet is X" for someone else's
+ * address without a valid token for that user.
  *
- * VERIFIED against Privy's current docs and the installed @privy-io/node types
- * (the package the deprecated @privy-io/server-auth now tells you to use):
- *   const privy = new PrivyClient({ appId, appSecret });
- *   await privy.utils().auth().verifyAccessToken(accessToken)   // ES256 JWT
- *   await privy.users().get({ id_token })                       // verifies AND
- *                                                               // returns the user
- * Note `verifyAuthToken` still exists but is marked @deprecated in favour of
- * `verifyAccessToken`, so the non-deprecated name is used here.
+ * This route is a thin, rate-limited front door for `resolveCustomerWallet`
+ * (src/lib/auth/customer-session.ts), the same resolver the holdings read and
+ * both transfer legs use. Keeping ONE implementation means the claim page and
+ * the wallet page can never drift apart in how they decide whose wallet this is.
+ *
+ * Two tokens are accepted, and the resolver tries them in order:
+ *   * IDENTITY token - verified in-process against the app's JWKS and turned
+ *     straight into the user object. Zero Privy API requests, so it cannot be
+ *     rate limited;
+ *   * ACCESS token - verified locally, then the user object is read by the DID
+ *     the token carries. One request, cached for a minute, made from the server.
+ *
+ * The second path is the one that matters in production. Live, this page failed
+ * with `GET auth.privy.io/api/v1/users/me 429` in the console, because Privy's
+ * browser-side call to obtain an identity token is rate limited per endpoint.
+ * The access token is already in the browser's store at that point, which is why
+ * the client now sends it and no longer waits on Privy for a second token. See
+ * `resolveCustomerWallet` for the full reasoning.
+ *
+ * VERIFIED against Privy's current docs and the installed @privy-io/node types:
+ *   await privy.utils().auth().verifyAccessToken(accessToken)  // ES256 JWT
+ *   await privy.users()._get(userId)                           // user by DID
+ *   await privy.users().get({ id_token: idToken })             // verifies AND
+ *                                                              // returns the user
+ * `verifyAuthToken` still exists but is marked @deprecated in favour of
+ * `verifyAccessToken`, so the non-deprecated name is used.
  */
 
 const TOO_MANY = "Too many requests. Please try again shortly.";
+
+/**
+ * The identity token cookie.
+ *
+ * Privy's docs: with "Return user data in an identity token" enabled (and a base
+ * domain set), Privy attaches the identity token as a cookie to EVERY request the
+ * browser makes to our own domain. That means the token can arrive here with no
+ * client-side Privy call at all, which is the one path nothing in the browser can
+ * rate limit. Reading it costs nothing, so it is used whenever the body did not
+ * already carry an identity token.
+ */
+function identityTokenCookie(req: Request): string {
+  const header = req.headers.get("cookie");
+  if (!header) return "";
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const name = trimmed.slice(0, eq);
+    // Matches `privy-id-token` and any prefixed form of it.
+    if (name === "privy-id-token" || name.endsWith("-privy-id-token")) {
+      try {
+        return decodeURIComponent(trimmed.slice(eq + 1)).trim();
+      } catch {
+        return trimmed.slice(eq + 1).trim();
+      }
+    }
+  }
+  return "";
+}
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, {
     status,
     headers: { "Cache-Control": "no-store" },
   });
-}
-
-function buildClient(): PrivyClient | null {
-  if (!env.nextPublicPrivyAppId || !env.privyAppSecret) return null;
-  return new PrivyClient({
-    appId: env.nextPublicPrivyAppId,
-    appSecret: env.privyAppSecret,
-  });
-}
-
-/** Pull the first Solana wallet address out of a Privy user object. */
-function solanaAddressFromUser(user: unknown): string | null {
-  const linked = (user as { linked_accounts?: unknown[] })?.linked_accounts;
-  if (!Array.isArray(linked)) return null;
-  for (const account of linked) {
-    const a = account as { type?: string; chain_type?: string; address?: string };
-    // Privy reports Solana wallets with chain_type 'solana'.
-    if (a?.type === "wallet" && a?.chain_type === "solana" && a.address) {
-      return a.address;
-    }
-  }
-  return null;
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -74,67 +99,30 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  const privy = buildClient();
-  if (!privy) {
-    return json(
-      { error: "Privy is not configured on this deployment." },
-      503,
-    );
-  }
-
-  let body: unknown;
+  // The body is read here rather than inside the resolver so the identity token
+  // cookie can be folded in as a fallback.
+  let raw: Record<string, unknown> = {};
   try {
-    body = await req.json();
+    const parsed = await req.json();
+    if (parsed && typeof parsed === "object") {
+      raw = parsed as Record<string, unknown>;
+    }
   } catch {
-    return json({ error: "Invalid JSON body." }, 400);
+    // A body that will not parse is not fatal: the cookie path can still carry
+    // the whole request, and the resolver reports "please sign in again" if
+    // neither source produced a token.
   }
 
-  const raw = body as { accessToken?: unknown; idToken?: unknown };
-  const accessToken =
-    typeof raw?.accessToken === "string" ? raw.accessToken.trim() : "";
-  const idToken = typeof raw?.idToken === "string" ? raw.idToken.trim() : "";
-
-  if (!accessToken && !idToken) {
-    return json({ error: "A Privy token is required." }, 400);
+  if (typeof raw.idToken !== "string" || !raw.idToken.trim()) {
+    const fromCookie = identityTokenCookie(req);
+    if (fromCookie) raw.idToken = fromCookie;
   }
 
-  try {
-    // A verified access token proves the caller IS that Privy user. It carries
-    // the DID in `sub`, which is what the user lookup is keyed on.
-    if (accessToken) {
-      await privy.utils().auth().verifyAccessToken(accessToken);
-    }
-
-    // The identity token verifies AND returns the full user object (including
-    // linked wallets). Privy's docs note the access token alone does not carry
-    // the linked accounts, which is why the id token is used for the lookup.
-    if (!idToken) {
-      return json(
-        {
-          error:
-            "A Privy identity token is required to read the linked wallet. The access token alone does not carry linked accounts.",
-        },
-        400,
-      );
-    }
-
-    const user = await privy.users().get({ id_token: idToken });
-    const address = solanaAddressFromUser(user);
-    if (!address) {
-      return json(
-        { error: "No Solana wallet is linked to this Privy account." },
-        422,
-      );
-    }
-
-    return json({ address, claimMethod: "privy_embedded" });
-  } catch (e) {
-    // Invalid/expired token. Privy's docs advise the client to refresh via
-    // getAccessToken() and retry, so this is a 401 the client can act on.
-    console.warn("Privy token verification failed:", (e as Error).message);
-    return json(
-      { error: "Your sign-in could not be verified. Please sign in again." },
-      401,
-    );
+  const session = await resolveCustomerWallet(raw);
+  if ("error" in session) {
+    return json({ error: session.error }, session.status);
   }
+
+  return json({ address: session.address, claimMethod: "privy_embedded" });
 }
+

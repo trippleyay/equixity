@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   usePrivy,
   useLogin,
-  getIdentityToken,
+  useIdentityToken,
 } from "@privy-io/react-auth";
 
 /**
@@ -70,7 +70,11 @@ export function RewardClaimPanel({
   /** Exact approved attestation sentence, server-derived. */
   attestationText: string;
 }) {
-  const { ready, authenticated } = usePrivy();
+  const { ready, authenticated, getAccessToken } = usePrivy();
+  // Privy writes the IDENTITY token to its store only on some app
+  // configurations, and asking for one costs a rate-limited API call (see
+  // resolveWallet below). Read it if it is already there, never chase it.
+  const { identityToken } = useIdentityToken();
 
   const [state, setState] = useState<StatusState>({ kind: "loading" });
   const [attested, setAttested] = useState(false);
@@ -86,6 +90,18 @@ export function RewardClaimPanel({
   // the load effect (never during render, which must stay pure) and read back
   // by the confirm call.
   const viewIdRef = useRef<string | null>(null);
+
+  // Privy's token getters are reached through refs so `resolveWallet` below
+  // keeps a STABLE identity. That stability matters: the mount effect depends on
+  // it, and a callback that changes identity on every render would make that
+  // effect re-run on every render, which is a retry storm against a
+  // rate-limited API.
+  const getAccessTokenRef = useRef(getAccessToken);
+  const identityTokenRef = useRef(identityToken);
+  useEffect(() => {
+    getAccessTokenRef.current = getAccessToken;
+    identityTokenRef.current = identityToken;
+  }, [getAccessToken, identityToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,25 +148,31 @@ export function RewardClaimPanel({
     };
   }, [rewardEventId]);
 
-  // Privy: once signed in, resolve the Solana address SERVER-SIDE from the
-  // identity token. The browser is never the trusted source for the address.
+  // Privy: once signed in, resolve the Solana address SERVER-SIDE. The browser
+  // is never the trusted source for the address.
   //
-  // `getIdentityToken()` (imperative) rather than the `useIdentityToken` hook:
-  // the hook is populated during render and does not re-fire reliably when a
-  // session is RESTORED after mount, which is exactly the returning-customer
-  // case. Calling it imperatively on demand always returns a fresh token.
+  // WHAT ACTUALLY BROKE (two browsers, two emails, and the console said so):
   //
-  // SINGLE-FLIGHT + ONE BACKED-OFF RETRY, both deliberate, and both added after
-  // this failed live in two browsers with two different emails. The console
-  // showed `GET auth.privy.io/api/v1/users/me 429 (Too Many Requests)`. That
-  // is PRIVY rate-limiting its own users/me endpoint, not a sign-in failure and
-  // not a problem with our route. The previous code let that transient 429
-  // surface to the customer as "We could not confirm your sign-in", which is
-  // both wrong and alarming on a checkout they just paid for.
+  //   GET auth.privy.io/api/v1/users/me 429 (Too Many Requests)
   //
-  // So: one call in flight at a time (re-entrancy guard), and one short retry
-  // after a brief pause if Privy answers 429. A real failure after that still
-  // reports honestly.
+  // That request is Privy's OWN browser-side fetch, made while obtaining an
+  // IDENTITY token, and Privy rate limits its API per endpoint (docs.privy.io,
+  // "Optimize your setup" > "Handling rate limits"). So the token the previous
+  // version waited on was a token Privy was refusing to hand over, and polling
+  // for it re-asked the refusing endpoint on every attempt. Nothing about that
+  // was a sign-in failure, and the customer was told "we could not confirm your
+  // sign-in" on a page they had just reached from a paid checkout.
+  //
+  // THE FIX IS TO STOP ASKING PRIVY FOR A SECOND TOKEN. The ACCESS token is
+  // already in the browser the moment a session exists, it is the exact token
+  // our server verifies, and `getAccessToken()` reads it locally instead of
+  // calling Privy. Our server then reads the wallet from Privy itself, once,
+  // with the app secret, and caches it for a minute. The identity token is still
+  // sent when the store happens to hold one, because the server prefers it (it
+  // costs no API call at all), but nothing depends on it any more.
+  //
+  // SINGLE-FLIGHT: one resolve in flight at a time, so clicking twice cannot
+  // stack requests.
   const resolvingRef = useRef(false);
   const resolveWallet = useCallback(async () => {
     if (resolvingRef.current || privyResolved) return;
@@ -158,58 +180,73 @@ export function RewardClaimPanel({
     setWalletError(null);
 
     /**
-     * Privy's `getIdentityToken()` does NOT throw when it cannot produce a
-     * token. Its implementation is:
-     *
-     *   return await yi?.updateUserAndIdToken(),
-     *          useServerCookies ? store.identityToken : (store.token || null)
-     *
-     * so a missing or not-yet-ready token arrives as a plain `null`. The
-     * previous code only retried inside `catch`, which therefore never ran, and
-     * a `null` went straight to the customer as "we could not confirm your
-     * sign-in". That is why the button looked broken: the token is not in the
-     * store at the instant login completes, and we asked once and gave up.
-     *
-     * So: poll. `null` is the retryable condition, not an exception, and we
-     * wait for Privy to finish writing the token into its store.
+     * A few short reads of the local access token, covering the beat between
+     * "login finished" and "Privy has written the token into its store". This
+     * never throws on a missing token (it returns null), so the loop treats a
+     * throw exactly like a null and keeps going. Six tries at most, because this
+     * is a local read, not a network call with a rate limit behind it.
      */
-    const fetchIdentityToken = async (): Promise<string | null> => {
-      for (let attempt = 0; attempt < 12; attempt++) {
-        // Privy rate-limits its own API; backing off here is the whole point.
+    const freshAccessToken = async (): Promise<string | null> => {
+      for (let attempt = 0; attempt < 6; attempt++) {
         if (attempt > 0) {
-          await new Promise((r) => setTimeout(r, Math.min(400 * attempt, 2000)));
+          await new Promise((r) => setTimeout(r, Math.min(300 * attempt, 1200)));
         }
         try {
-          const token = await getIdentityToken();
+          const token = await getAccessTokenRef.current();
           if (token) return token;
         } catch {
-          // A thrown error is treated exactly like null: keep polling.
+          // Treated as "not ready yet".
         }
       }
       return null;
     };
 
-    try {
-      const idToken = await fetchIdentityToken();
-      if (!idToken) {
-        setWalletError(
-          "We could not confirm your sign-in just now. Please try once more.",
-        );
-        return;
-      }
+    const post = async (accessToken: string | null, idToken: string | null) => {
       const res = await fetch("/api/public/privy-wallet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken }),
+        body: JSON.stringify({ accessToken, idToken }),
       });
-      if (!res.ok) throw new Error("verify failed");
-      const json = await res.json();
-      if (json?.address) {
-        setPrivyResolved(json.address);
-        setWalletError(null);
-      } else {
-        setWalletError("We could not verify your sign-in. Please try again.");
+      const json = await res.json().catch(() => ({}));
+      return {
+        ok: res.ok,
+        status: res.status,
+        address: typeof json?.address === "string" ? json.address : null,
+        error: typeof json?.error === "string" ? json.error : null,
+      };
+    };
+
+    try {
+      let result = await post(
+        await freshAccessToken(),
+        identityTokenRef.current ?? null,
+      );
+
+      // One retry, and only for a token that is not ready yet: a brand new
+      // session can be a beat behind, and a freshly created account can be a
+      // beat ahead of its embedded wallet. Both heal on their own. A 503 (Privy
+      // briefly unreachable) or a rejected token is reported as it is.
+      if (!result.ok && (result.status === 401 || result.status === 422)) {
+        await new Promise((r) => setTimeout(r, 900));
+        result = await post(
+          await freshAccessToken(),
+          identityTokenRef.current ?? null,
+        );
       }
+
+      if (result.address) {
+        setPrivyResolved(result.address);
+        setWalletError(null);
+        return;
+      }
+
+      if (!result.ok && result.error) {
+        // The server's own words, with any en/em dash stripped.
+        setWalletError(clean(result.error));
+        return;
+      }
+
+      setWalletError("We could not verify your sign-in. Please try again.");
     } catch {
       setWalletError("We could not verify your sign-in. Please try again.");
     } finally {
@@ -275,9 +312,9 @@ export function RewardClaimPanel({
   const { login: openLogin } = useLogin({
     onComplete: () => {
       setSigningIn(false);
-      // The session exists now. The token itself is polled for, because Privy
-      // writes it to its store a moment after login completes rather than
-      // synchronously with this callback.
+      // The session exists now. The address is resolved from the ACCESS token,
+      // which Privy has by this point (resolveWallet reads it locally, and
+      // briefly waits if it is a beat behind).
       void resolveWallet();
     },
     onError: () => {

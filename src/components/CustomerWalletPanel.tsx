@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 // Privy exposes Solana wallets and Solana signing from a dedicated entry point.
 // The root entry point's `useSignTransaction` is the EVM one (it takes an
 // `UnsignedTransactionRequest` and returns a 0x signature), which is why the
 // Solana import path matters here.
 import { useWallets, useSignTransaction } from "@privy-io/react-auth/solana";
-import { usePrivy, useLogin, useLogout } from "@privy-io/react-auth";
-import { getAccessToken, getIdentityToken } from "@privy-io/react-auth";
+import { usePrivy, useLogin, useLogout, useIdentityToken } from "@privy-io/react-auth";
+import { getAccessToken } from "@privy-io/react-auth";
 
 /**
  * Customer wallet panel: sign in, see what you hold, send it out.
@@ -55,6 +55,11 @@ export function CustomerWalletPanel() {
   const { logout } = useLogout();
   const { wallets } = useWallets();
   const { signTransaction } = useSignTransaction();
+  // Privy holds the identity token only on some app configurations. It is read,
+  // never requested: requesting one makes a browser-side call to a rate-limited
+  // Privy endpoint, which is exactly what broke sign-in on the claim page
+  // (`GET auth.privy.io/api/v1/users/me 429`).
+  const { identityToken } = useIdentityToken();
 
   const [address, setAddress] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -68,11 +73,25 @@ export function CustomerWalletPanel() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  /** Both Privy tokens, fetched fresh so an expired access token is refreshed. */
+  // Held in a ref so `tokens` (and therefore `load`) keeps a stable identity and
+  // the load effect cannot re-run on every render.
+  const identityTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    identityTokenRef.current = identityToken;
+  }, [identityToken]);
+
+  /**
+   * The tokens the server needs, fetched fresh so an expired access token is
+   * refreshed.
+   *
+   * The ACCESS token is the one that matters: the server verifies it and then
+   * reads the wallet from Privy itself. The identity token rides along when
+   * Privy's store happens to hold one, because the server prefers it (it costs
+   * no API call there), but nothing depends on it.
+   */
   const tokens = useCallback(async () => {
     const accessToken = await getAccessToken();
-    const idToken = await getIdentityToken();
-    return { accessToken, idToken };
+    return { accessToken, idToken: identityTokenRef.current };
   }, []);
 
   const load = useCallback(async () => {

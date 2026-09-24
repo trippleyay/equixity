@@ -2,19 +2,26 @@
  * Customer session: resolve a Privy token to a Solana wallet address, SERVER-SIDE.
  *
  * This is the single source of truth for "who is this customer", shared by the
- * holdings read and both transfer legs. The logic is the one already proven in
- * /api/public/privy-wallet:
+ * holdings read, both transfer legs, and the claim page. Two token paths, tried
+ * in this order:
  *
- *   * the ACCESS token proves the caller IS that Privy user (ES256 JWT, verified
- *     with Privy's own `verifyAccessToken`);
- *   * the IDENTITY token both verifies AND returns the user object including
- *     linked wallets, which the access token alone does not carry, per Privy's
- *     own documentation;
- *   * the Solana address is read from that response, never from the request body.
+ *   * the IDENTITY token, if the browser has one: verified in-process against
+ *     the app's JWKS and turned straight into the user object. No Privy API
+ *     request, so it cannot be rate limited;
+ *   * the ACCESS token, which every signed-in customer always has: verified
+ *     locally (Privy-issued ES256 JWT), then the user object is read BY THE DID
+ *     THAT TOKEN CARRIES, with the app secret. One request, cached for a minute.
  *
- * That last point is the whole security property: the browser is never the
- * trusted source of whose wallet this is, so there is no parameter a caller could
- * tamper with to read or move someone else's assets.
+ * The Solana address is read out of the user object in both cases, never from
+ * the request body. That is the whole security property: the browser is never
+ * the trusted source of whose wallet this is, so there is no parameter a caller
+ * could tamper with to read or move someone else's assets.
+ *
+ * WHY BOTH: the identity token is the cheap path, but it only exists on some
+ * app configurations, and this page broke live with
+ * `GET auth.privy.io/api/v1/users/me 429` coming from the browser. That 429 came
+ * from asking Privy for an identity token, not from signing in, so the token the
+ * browser always holds is now enough on its own.
  *
  * A returning customer who signs in with the SAME email gets the SAME Privy user
  * and therefore the SAME wallet, which is what makes a second reward land
@@ -51,6 +58,26 @@ function buildClient(): PrivyClient | null {
 }
 
 /**
+ * Resolved addresses, keyed by Privy user id, held for a minute.
+ *
+ * WHY THIS EXISTS: the access-token path costs exactly one Privy API request
+ * (GET /api/v1/users/:id). A single customer action asks for the same user id
+ * two or three times in a row (holdings, then both transfer legs), and Privy
+ * applies rate limits PER ENDPOINT, so a repeated lookup for a user we already
+ * resolved a second ago is how a working page becomes a 429. Privy's own
+ * "Optimize your setup" page names caching exactly this way as a best practice.
+ * The cache is short-lived on purpose: a linked wallet does not change
+ * mid-session.
+ *
+ * Only a SUCCESSFUL address is cached. A user whose embedded wallet Privy is
+ * still creating is deliberately never cached, so a first-ever sign-in can
+ * never be remembered as "no wallet linked".
+ */
+const ADDRESS_CACHE_TTL_MS = 60_000;
+const ADDRESS_CACHE_MAX = 500;
+const addressCache = new Map<string, { address: string; expiresAt: number }>();
+
+/**
  * Reads the two Privy tokens. Accepts either a Request (body read here) or an
  * already-parsed body object, because the transfer route has to parse its body
  * once for the transfer parameters and passes the same object in rather than
@@ -84,22 +111,83 @@ export async function resolveCustomerWallet(
     return { error: "Please sign in again.", status: 401 };
   }
 
-  try {
-    if (accessToken) {
-      await privy.utils().auth().verifyAccessToken(accessToken);
+  /**
+   * PATH 1, tried first because it costs NO Privy API request at all: the
+   * identity token is verified against the app's JWKS in-process and returns
+   * the user object directly. Privy's own documentation calls this the
+   * rate-limit-free way to read user data, and rate limiting is precisely what
+   * broke this page live (the console showed
+   * `GET auth.privy.io/api/v1/users/me 429`). Nothing on this path can 429.
+   *
+   * If it is absent or rejected we fall through rather than fail: the identity
+   * token only exists when the app has "return user data in an identity token"
+   * enabled, and an hour-old one expires.
+   */
+  if (idToken) {
+    try {
+      const user = await privy.users().get({ id_token: idToken });
+      const address = solanaAddressFromUser(user);
+      if (address) return { address };
+    } catch (e) {
+      console.warn("Customer identity token rejected:", (e as Error).message);
     }
-    if (!idToken) {
-      return { error: "Please sign in again.", status: 401 };
-    }
+  }
 
-    const user = await privy.users().get({ id_token: idToken });
+  if (!accessToken) {
+    return {
+      error: "Your sign-in could not be verified. Please sign in again.",
+      status: 401,
+    };
+  }
+
+  /**
+   * PATH 2, the one that always works: the access token is a Privy-issued ES256
+   * JWT, so verifying it locally proves the caller IS that Privy user and hands
+   * us the DID in `user_id`. The access token does not carry linked accounts
+   * (Privy says so explicitly), so the user object is then read BY THAT DID with
+   * the app secret.
+   *
+   * The client never touches a user lookup: the browser was the thing being
+   * rate limited. One request per signed-in session here, cached for a minute,
+   * and the did is taken from a verified token, never from the request body.
+   */
+  let userId: string;
+  try {
+    const claims = await privy.utils().auth().verifyAccessToken(accessToken);
+    userId = claims.user_id;
+  } catch (e) {
+    console.warn("Customer access token rejected:", (e as Error).message);
+    return {
+      error: "Your sign-in could not be verified. Please sign in again.",
+      status: 401,
+    };
+  }
+
+  const cached = addressCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { address: cached.address };
+  }
+
+  try {
+    const user = await privy.users()._get(userId);
     const address = solanaAddressFromUser(user);
     if (!address) {
       return { error: "No wallet is linked to this account yet.", status: 422 };
     }
+    if (addressCache.size >= ADDRESS_CACHE_MAX) addressCache.clear();
+    addressCache.set(userId, {
+      address,
+      expiresAt: Date.now() + ADDRESS_CACHE_TTL_MS,
+    });
     return { address };
   } catch (e) {
-    console.warn("Customer session verification failed:", (e as Error).message);
-    return { error: "Your sign-in could not be verified. Please sign in again.", status: 401 };
+    // Privy unreachable, or its own rate limit hit. This is NOT a bad sign-in,
+    // so it must not be reported as one: a customer who just paid should never
+    // be told to sign in again because Privy had a moment.
+    console.warn("Privy user lookup failed:", (e as Error).message);
+    return {
+      error: "We could not reach your account just now. Please try once more.",
+      status: 503,
+    };
   }
 }
