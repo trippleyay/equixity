@@ -140,13 +140,44 @@ export function RewardClaimPanel({
   // the hook is populated during render and does not re-fire reliably when a
   // session is RESTORED after mount, which is exactly the returning-customer
   // case. Calling it imperatively on demand always returns a fresh token.
+  //
+  // SINGLE-FLIGHT + ONE BACKED-OFF RETRY, both deliberate, and both added after
+  // this failed live in two browsers with two different emails. The console
+  // showed `GET auth.privy.io/api/v1/users/me 429 (Too Many Requests)`. That
+  // is PRIVY rate-limiting its own users/me endpoint, not a sign-in failure and
+  // not a problem with our route. The previous code let that transient 429
+  // surface to the customer as "We could not confirm your sign-in", which is
+  // both wrong and alarming on a checkout they just paid for.
+  //
+  // So: one call in flight at a time (re-entrancy guard), and one short retry
+  // after a brief pause if Privy answers 429. A real failure after that still
+  // reports honestly.
+  const resolvingRef = useRef(false);
   const resolveWallet = useCallback(async () => {
+    if (resolvingRef.current || privyResolved) return;
+    resolvingRef.current = true;
     setWalletError(null);
+
+    const fetchIdentityToken = async (): Promise<string | null> => {
+      // getIdentityToken() has no response object, so a rate limit surfaces as a
+      // rejection. Retry once after a pause rather than failing the customer.
+      try {
+        return await getIdentityToken();
+      } catch {
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          return await getIdentityToken();
+        } catch {
+          return null;
+        }
+      }
+    };
+
     try {
-      const idToken = await getIdentityToken();
+      const idToken = await fetchIdentityToken();
       if (!idToken) {
         setWalletError(
-          "We could not confirm your sign-in. Please try again.",
+          "We could not confirm your sign-in just now. Please try once more.",
         );
         return;
       }
@@ -165,8 +196,10 @@ export function RewardClaimPanel({
       }
     } catch {
       setWalletError("We could not verify your sign-in. Please try again.");
+    } finally {
+      resolvingRef.current = false;
     }
-  }, []);
+  }, [privyResolved]);
 
   // If Privy already has a restored session, resolve the wallet on mount so a
   // returning customer never has to press anything. The call is deferred to a
