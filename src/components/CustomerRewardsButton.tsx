@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   PrivyProvider,
@@ -52,19 +52,36 @@ function CustomerRewardsButtonInner({
   const router = useRouter();
   const { ready, authenticated } = usePrivy();
 
+  /**
+   * DID THE VISITOR ACTUALLY PRESS THIS BUTTON?
+   *
+   * This flag is the whole reason the landing page stopped hijacking people.
+   * `onComplete` fires for ALREADY authenticated users too, and mounting a
+   * PrivyProvider restores a persisted session, so on a browser that had ever
+   * signed in once the callback ran the moment the marketing page loaded and
+   * pushed the visitor into the customer wallet without a click. The marketing
+   * site has two destinations on it, merchant and customer, and neither is
+   * allowed to win by default: navigation happens only from a real press.
+   */
+  const pressed = useRef(false);
+
   const { login } = useLogin({
-    // Fires for both newly and already authenticated users (Privy's own docs on
-    // the installed types). The destination is the same either way.
-    onComplete: () => router.push("/wallet"),
+    onComplete: () => {
+      if (!pressed.current) return;
+      pressed.current = false;
+      router.push("/wallet");
+    },
   });
 
   const go = useCallback(() => {
+    // An explicit press that arrives before Privy is ready still moves the
+    // customer forward: /wallet renders its own sign-in card, so the button can
+    // never be a dead no-op.
     if (authenticated || !ready) {
-      // Signed in already, or Privy has not finished initialising: /wallet
-      // handles both, and shows its own sign-in card in the second case.
       router.push("/wallet");
       return;
     }
+    pressed.current = true;
     login();
   }, [authenticated, ready, login, router]);
 

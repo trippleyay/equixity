@@ -1,5 +1,14 @@
 /**
- * GET /api/customer/holdings — what one customer's wallet holds.
+ * POST /api/customer/holdings — what one customer's wallet holds.
+ *
+ * WHY POST AND NOT GET: this route needs the customer's Privy tokens, and a
+ * bearer token in a query string ends up in URLs, browser history, proxy logs
+ * and referrer headers. They travel in the body instead, exactly as they do for
+ * both transfer legs. The method is also load-bearing: this route previously
+ * exported GET only while the wallet page posted to it, so every signed-in
+ * customer got a 405 with an empty body and the page showed the generic
+ * "We could not load your rewards." A method mismatch is invisible in a
+ * typecheck and only ever shows up in a browser.
  *
  * Auth is a Privy token, resolved SERVER-SIDE to a Solana address through the
  * same verified path as /api/public/privy-wallet. There is deliberately NO
@@ -21,7 +30,7 @@ import { resolveCustomerWallet } from "@/lib/auth/customer-session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request): Promise<NextResponse> {
+export async function POST(req: Request): Promise<NextResponse> {
   const noStore = { "Cache-Control": "no-store" };
 
   const limit = await checkCustomerHoldingsRateLimit(clientIp(req, ipAddress));

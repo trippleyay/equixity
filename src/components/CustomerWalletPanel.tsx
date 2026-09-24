@@ -204,19 +204,32 @@ export function CustomerWalletPanel() {
     [amount, destination, load, signTransaction, tokens, wallets, address],
   );
 
+  // Everything the customer holds, in one number. Integer math only: the server
+  // sends USDC base units as strings, so the sum never touches a float.
+  const totalUnits = holdings.reduce<bigint>(
+    (sum, h) => (h.amountUsd ? sum + BigInt(h.amountUsd) : sum),
+    0n,
+  );
+  const totalLabel = usdLabel(totalUnits.toString()) ?? "$0.00";
+  const rewardCountLabel =
+    holdings.length === 1 ? "1 reward" : `${holdings.length} rewards`;
+
   if (!ready) {
     return (
       <div className="rounded-2xl border border-ink/5 bg-white p-6 text-sm text-slate shadow-soft">
-        Loading your wallet…
+        Loading your wallet...
       </div>
     );
   }
 
   if (!authenticated) {
     return (
-      <div className="rounded-2xl border border-ink/5 bg-white p-7 shadow-soft">
-        <p className="font-display text-xl font-medium text-ink">
-          Sign in to see your rewards
+      <div className="rounded-2xl border border-white/60 bg-gradient-to-b from-white via-white to-equixity-mist/80 p-6 shadow-lift sm:p-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-equixity-deep">
+          Sign in
+        </p>
+        <p className="mt-2 font-display text-2xl font-medium text-ink">
+          See your rewards
         </p>
         <p className="mt-2 text-sm leading-relaxed text-slate">
           Use the same email you used when you claimed. You will get the same
@@ -225,9 +238,9 @@ export function CustomerWalletPanel() {
         <button
           type="button"
           onClick={() => login()}
-          className="mt-5 rounded-full bg-equixity-deep px-6 py-3 text-sm font-medium text-white transition hover:bg-equixity-deepDark"
+          className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-equixity-deep px-6 py-3 text-sm font-medium text-white transition hover:bg-equixity-deepDark sm:w-auto"
         >
-          Sign in
+          Continue with email
         </button>
       </div>
     );
@@ -235,47 +248,88 @@ export function CustomerWalletPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-ink/5 bg-white px-5 py-4 shadow-soft">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate">
+      {/* The one number that matters, in the brand gradient, exactly as the
+          merchant dashboard presents a balance. A customer opening this on a
+          phone should see what they own before they see any chrome. */}
+      <div className="rounded-2xl bg-gradient-to-br from-equixity-deep via-equixity to-equixity-deepDark p-6 shadow-lift">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
+              Total value
+            </p>
+            <p className="mt-2 font-display text-3xl font-medium text-white">
+              {loading && holdings.length === 0 ? "..." : totalLabel}
+            </p>
+            <p className="mt-1 text-xs text-white/70">{rewardCountLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="shrink-0 rounded-full border border-white/40 px-4 py-2 text-xs font-medium text-white transition hover:bg-white/10"
+          >
+            Sign out
+          </button>
+        </div>
+
+        <div className="mt-5 border-t border-white/15 pt-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
             Your wallet
           </p>
-          <p className="mt-1 truncate font-mono text-xs text-ink">
-            {address ?? "Resolving…"}
+          <p className="mt-1 truncate font-mono text-xs text-white/90">
+            {address ?? "Resolving..."}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => logout()}
-          className="shrink-0 rounded-full border border-ink/10 px-4 py-2 text-xs font-medium text-slate transition hover:bg-ink/5"
-        >
-          Sign out
-        </button>
       </div>
 
       {loading && holdings.length === 0 && (
         <div className="rounded-2xl border border-ink/5 bg-white p-6 text-sm text-slate shadow-soft">
-          Loading what you hold…
+          Loading what you hold...
         </div>
       )}
 
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-900 shadow-soft">
           {error}
         </div>
       )}
 
       {notice && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900 shadow-soft">
           {notice}
         </div>
       )}
 
       {!loading && !error && holdings.length === 0 && (
-        <div className="rounded-2xl border border-ink/5 bg-white p-6 text-sm leading-relaxed text-slate shadow-soft">
-          You don&apos;t have any rewards yet. They appear here the moment a
-          merchant sends you one.
+        <div className="rounded-2xl border border-ink/5 bg-white p-8 text-center shadow-soft">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-equixity-mist">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.6}
+              className="h-6 w-6 text-equixity-deep"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H4.5a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+              />
+            </svg>
+          </div>
+          <p className="mt-4 font-display text-lg font-medium text-ink">
+            You don&apos;t have any rewards yet.
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-slate">
+            They appear here the moment a merchant sends you one.
+          </p>
         </div>
+      )}
+
+      {holdings.length > 0 && (
+        <p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate">
+          What you hold
+        </p>
       )}
 
       {holdings.map((h) => {
@@ -283,7 +337,7 @@ export function CustomerWalletPanel() {
         return (
           <div
             key={h.rewardEventId}
-            className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft"
+            className="rounded-2xl border border-ink/5 bg-white p-5 shadow-soft transition-shadow hover:shadow-lift"
           >
             <div className="flex items-center gap-4">
               {h.logoUrl ? (
@@ -291,16 +345,18 @@ export function CustomerWalletPanel() {
                 <img
                   src={h.logoUrl}
                   alt=""
-                  className="h-11 w-11 shrink-0 rounded-full object-cover"
+                  className="h-12 w-12 shrink-0 rounded-full bg-equixity-mist object-cover ring-1 ring-ink/5"
                 />
               ) : (
-                <div className="h-11 w-11 shrink-0 rounded-full bg-equixity-mist" />
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-equixity-mist text-sm font-semibold text-equixity-deep ring-1 ring-ink/5">
+                  {h.ticker.slice(0, 1)}
+                </div>
               )}
               <div className="min-w-0 flex-1">
-                <p className="font-display text-lg font-medium text-ink">
+                <p className="truncate font-display text-lg font-medium text-ink">
                   {h.displayName}
                 </p>
-                <p className="text-xs text-slate">
+                <p className="truncate text-xs text-slate">
                   {h.ticker}
                   {h.merchantName ? ` from ${h.merchantName}` : ""}
                 </p>
@@ -321,7 +377,7 @@ export function CustomerWalletPanel() {
               </p>
             )}
 
-            <div className="mt-4">
+            <div className="mt-4 border-t border-ink/5 pt-4">
               {isOpen ? (
                 <div className="space-y-3">
                   <label className="block text-xs font-medium text-slate">
@@ -332,7 +388,7 @@ export function CustomerWalletPanel() {
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="0.00"
-                      className="mt-1 w-full rounded-full border border-ink/10 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-equixity focus:ring-2 focus:ring-equixity/20"
+                      className="mt-1 w-full rounded-full border border-ink/10 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-equixity-deep focus:ring-2 focus:ring-equixity-deep/25"
                     />
                   </label>
                   <label className="block text-xs font-medium text-slate">
@@ -342,7 +398,7 @@ export function CustomerWalletPanel() {
                       value={destination}
                       onChange={(e) => setDestination(e.target.value)}
                       placeholder="Paste the recipient's wallet address."
-                      className="mt-1 w-full rounded-full border border-ink/10 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-equixity focus:ring-2 focus:ring-equixity/20"
+                      className="mt-1 w-full rounded-full border border-ink/10 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-equixity-deep focus:ring-2 focus:ring-equixity-deep/25"
                     />
                   </label>
                   {formError && <p className="text-xs text-red-700">{formError}</p>}
@@ -353,7 +409,7 @@ export function CustomerWalletPanel() {
                         setOpenReward(null);
                         setFormError(null);
                       }}
-                      className="rounded-full border border-ink/10 px-4 py-2 text-xs font-medium text-slate transition hover:bg-ink/5"
+                      className="rounded-full border border-ink/10 px-4 py-2 text-xs font-medium text-slate transition hover:bg-equixity-mist"
                     >
                       Cancel
                     </button>
@@ -363,7 +419,7 @@ export function CustomerWalletPanel() {
                       onClick={() => void send(h)}
                       className="rounded-full bg-equixity-deep px-5 py-2 text-xs font-medium text-white transition hover:bg-equixity-deepDark disabled:opacity-60"
                     >
-                      {busy ? "Sending…" : "Send"}
+                      {busy ? "Sending..." : "Send"}
                     </button>
                   </div>
                 </div>
@@ -374,7 +430,7 @@ export function CustomerWalletPanel() {
                     setOpenReward(h.rewardEventId);
                     setFormError(null);
                   }}
-                  className="rounded-full border border-ink/10 px-4 py-2 text-xs font-medium text-ink transition hover:bg-ink/5"
+                  className="rounded-full border border-ink/10 px-4 py-2 text-xs font-medium text-ink transition hover:bg-equixity-mist"
                 >
                   Send it out
                 </button>
