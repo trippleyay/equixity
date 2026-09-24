@@ -72,6 +72,7 @@ export function RewardClaimPanel({
   const [state, setState] = useState<StatusState>({ kind: "loading" });
   const [attested, setAttested] = useState(false);
   const [walletInput, setWalletInput] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [privyResolved, setPrivyResolved] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -222,6 +223,24 @@ export function RewardClaimPanel({
       .finally(() => setSubmitting(false));
   }, [state, attested, walletInput, privyResolved, walletValidationError, rewardEventId]);
 
+  /**
+   * The Privy path has no second button by design: "Use Equixity" is the only
+   * visible action, and a customer who has never used crypto should not have to
+   * make a second choice after signing in. So once Privy has returned a verified
+   * wallet AND the attestation is ticked, delivery fires on its own.
+   *
+   * The ref guard makes this fire exactly once per page load even though the
+   * effect re-runs on each dependency change.
+   */
+  const autoConfirmedRef = useRef(false);
+  useEffect(() => {
+    if (state.kind !== "ready" || !state.needsWallet) return;
+    if (!privyResolved || !attested) return;
+    if (autoConfirmedRef.current) return;
+    autoConfirmedRef.current = true;
+    confirm();
+  }, [state, attested, privyResolved, confirm]);
+
   if (state.kind === "loading") {
     return (
       <div className="rounded-2xl border border-ink/5 bg-white p-6 text-sm text-slate shadow-soft">
@@ -327,57 +346,89 @@ export function RewardClaimPanel({
         </span>
       </label>
 
-      {state.needsWallet && (
-        <div className="mt-5 space-y-3">
+      {/*
+        ONE primary action, deliberately. Two equally weighted buttons made a
+        non-crypto customer stop and choose between two things they did not
+        understand. "Use Equixity" is the path almost everyone takes, so it is
+        the only button on screen. Bringing your own wallet is a link that
+        reveals the field, for the small number who need it.
+      */}
+      {state.needsWallet ? (
+        <div className="mt-5">
           <button
             type="button"
             onClick={() => login()}
             disabled={!attested || submitting}
-            className="w-full rounded-full bg-equixity px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Set one up with just my email
+            Use Equixity
           </button>
-          <div>
-            <label
-              htmlFor="eqx-wallet"
-              className="text-xs font-medium text-gray-500"
+
+          {!showPaste ? (
+            <button
+              type="button"
+              onClick={() => setShowPaste(true)}
+              className="mt-3 w-full text-center text-sm text-slate underline underline-offset-4 transition hover:text-ink"
             >
-              I already have a wallet: paste your wallet address
-            </label>
-            <input
-              id="eqx-wallet"
-              type="text"
-              value={privyResolved ?? walletInput}
-              onChange={(e) => {
-                setPrivyResolved(null);
-                setWalletInput(e.target.value);
-                setWalletError(null);
-              }}
-              placeholder="Paste your Solana wallet address"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={submitting}
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-white px-3 py-2 font-mono text-sm text-ink outline-none focus:border-equixity"
-            />
-          </div>
+              I already have a wallet
+            </button>
+          ) : (
+            <div className="mt-4">
+              <label
+                htmlFor="eqx-wallet"
+                className="block text-xs font-medium text-slate"
+              >
+                Paste your wallet address
+              </label>
+              <input
+                id="eqx-wallet"
+                type="text"
+                value={walletInput}
+                onChange={(e) => {
+                  setWalletInput(e.target.value);
+                  setWalletError(null);
+                }}
+                placeholder="Paste your Solana wallet address"
+                autoComplete="off"
+                spellCheck={false}
+                disabled={submitting}
+                className="mt-1 w-full rounded-full border border-ink/10 bg-white px-4 py-2.5 font-mono text-sm text-ink outline-none focus:border-equixity"
+              />
+              <button
+                type="button"
+                onClick={confirm}
+                disabled={submitting || !attested || !walletInput.trim()}
+                className="mt-3 w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? "Delivering…" : "Confirm & Claim Reward"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPaste(false);
+                  setWalletInput("");
+                  setWalletError(null);
+                }}
+                className="mt-2 w-full text-center text-xs text-slate underline underline-offset-4 transition hover:text-ink"
+              >
+                Use Equixity instead
+              </button>
+            </div>
+          )}
         </div>
+      ) : (
+        <button
+          type="button"
+          onClick={confirm}
+          disabled={submitting || !attested}
+          className="mt-5 w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? "Delivering…" : "Confirm & Claim Reward"}
+        </button>
       )}
 
       {walletError && <p className="mt-3 text-sm text-red-600">{walletError}</p>}
       {result && <p className="mt-3 text-sm text-ink">{result.message}</p>}
-
-      <button
-        type="button"
-        onClick={confirm}
-        disabled={
-          submitting ||
-          !attested ||
-          (state.needsWallet && !privyResolved && !walletInput.trim())
-        }
-        className="mt-5 w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {submitting ? "Delivering…" : "Confirm & Claim Reward"}
-      </button>
     </div>
   );
 }

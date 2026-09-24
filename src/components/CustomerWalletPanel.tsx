@@ -286,9 +286,9 @@ export function CustomerWalletPanel() {
                   {h.merchantName ? ` from ${h.merchantName}` : ""}
                 </p>
               </div>
-              <div className="text-right">
+              <div className="shrink-0 text-right">
                 <p className="font-display text-lg font-medium text-ink">
-                  {h.amount ?? "—"}
+                  {h.amount ?? "0"}
                 </p>
                 {h.amountUsd && (
                   <p className="text-xs text-slate">{usdLabel(h.amountUsd)}</p>

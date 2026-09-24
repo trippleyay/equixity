@@ -49,34 +49,53 @@ export default async function RewardPage({
   return (
     <main className="mx-auto min-h-screen max-w-2xl bg-gradient-to-b from-equixity-mist/60 via-white to-white px-4 py-12">
       <header className="mb-6">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate">
-          Equixity reward
-        </p>
-        <h1 className="mt-1 font-display text-3xl font-medium text-ink">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/equixity-wordmark-dark.svg"
+          alt="Equixity"
+          width={132}
+          height={28}
+          className="h-6 w-auto sm:h-7"
+        />
+        <h1 className="mt-3 font-display text-3xl font-medium text-ink">
           {reward.merchant_name} sent you a reward
         </h1>
       </header>
 
       <section className="mb-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <div className="flex items-center gap-3">
-          {reward.asset_logo_url ? (
-            /* Hotlinked from the issuer's CDN (spec section 3: no re-hosting). */
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={reward.asset_logo_url}
-              alt=""
-              width={40}
-              height={40}
-              className="h-10 w-10 rounded-full"
-            />
-          ) : null}
-          <div>
+          {/*
+            The logo is hotlinked from the issuer's CDN rather than re-hosted, so
+            it can fail on a cold or slow request. The mist circle sits behind it
+            unconditionally: if the image does not load, the customer sees a
+            clean placeholder rather than an empty gap. `eager` because this is
+            above the fold on a page the customer reaches once.
+          */}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-equixity-mist">
+            {reward.asset_logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={reward.asset_logo_url}
+                alt=""
+                width={40}
+                height={40}
+                loading="eager"
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : null}
+          </div>
+          <div className="min-w-0">
             <p className="font-display text-2xl font-medium text-ink">
-              {amount} {assetName}
+              {amount} {reward.asset_ticker ?? assetName}
             </p>
+            {/*
+              The customer's own currency is the STOCK, not the merchant's
+              settlement currency. "Worth $0.05" is what a shopper cares about;
+              naming USDC here is merchant plumbing leaking into their moment.
+            */}
             <p className="text-sm text-slate">
               {reward.reward_usdc_units
-                ? `Backed by $${formatUsdcUnits(reward.reward_usdc_units)} USDC`
+                ? `Worth $${formatUsdcUnits(reward.reward_usdc_units)}`
                 : null}
             </p>
           </div>
