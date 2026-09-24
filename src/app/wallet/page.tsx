@@ -1,7 +1,13 @@
 import { RewardProviders } from "@/components/RewardProviders";
 import { CustomerWalletPanel } from "@/components/CustomerWalletPanel";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Your rewards - Equixity",
+  description: "The stock you have earned, and where to send it.",
+};
 
 /**
  * /wallet — the customer's own view of what they hold.

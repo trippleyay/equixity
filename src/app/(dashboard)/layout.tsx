@@ -1,6 +1,12 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
 import { Sidebar } from "@/components/Sidebar";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+
+/** The one surface that IS the merchant product, so it names itself as such. */
+export const metadata: Metadata = {
+  title: "Equixity - Merchant",
+};
 
 export default async function DashboardLayout({
   children,

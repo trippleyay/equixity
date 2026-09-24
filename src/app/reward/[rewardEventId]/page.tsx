@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import {
   getRewardForHostedPage,
   type HostedRewardView,
@@ -9,6 +10,11 @@ import { RewardProviders } from "@/components/RewardProviders";
 import { RewardClaimPanel } from "@/components/RewardClaimPanel";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Your reward - Equixity",
+  description: "Claim the stock reward from your purchase.",
+};
 
 /**
  * /reward/[rewardEventId] — the hosted reward page
@@ -58,7 +64,7 @@ export default async function RewardPage({
           className="h-6 w-auto sm:h-7"
         />
         <h1 className="mt-3 font-display text-3xl font-medium text-ink">
-          {reward.merchant_name} sent you a reward
+          {reward.merchant_name} sent you a reward!
         </h1>
       </header>
 

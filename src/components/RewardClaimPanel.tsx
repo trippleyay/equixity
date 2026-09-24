@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePrivy, useIdentityToken } from "@privy-io/react-auth";
+import {
+  usePrivy,
+  useLogin,
+  useIdentityToken,
+} from "@privy-io/react-auth";
 
 /**
  * The hosted reward flow (reward-delivery spec sections 3a, 4).
@@ -66,7 +70,8 @@ export function RewardClaimPanel({
   /** Exact approved attestation sentence, server-derived. */
   attestationText: string;
 }) {
-  const { login } = usePrivy();
+  const { ready, authenticated } = usePrivy();
+  const { login: openLogin } = useLogin();
   const { identityToken } = useIdentityToken();
 
   const [state, setState] = useState<StatusState>({ kind: "loading" });
@@ -76,6 +81,7 @@ export function RewardClaimPanel({
   const [walletError, setWalletError] = useState<string | null>(null);
   const [privyResolved, setPrivyResolved] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [result, setResult] = useState<{ message: string } | null>(null);
   // Identifies THIS page load for the two-strike geo rule: a refresh makes a
   // fresh id, so only distinct loads can advance the streak. Generated inside
@@ -164,6 +170,35 @@ export function RewardClaimPanel({
     },
     [],
   );
+
+  /**
+   * Why not just `usePrivy().login()`: Privy PERSISTS a session, so on any
+   * return visit the user is already authenticated and `login()` refuses to
+   * re-open the modal. It only logs "Attempted to log in, but user is already
+   * logged in" to the console and does nothing, which is a dead button for every
+   * customer who has claimed before. Observed live on the hosted reward page.
+   *
+   * So: if Privy already has a session, skip straight to resolving the wallet
+   * (the effect below picks up identityToken and delivery continues). Only open
+   * the modal when there is genuinely no session.
+   */
+  const signIn = useCallback(() => {
+    setWalletError(null);
+    if (!ready) return; // Privy still restoring; nothing to do yet.
+    if (authenticated) {
+      // No modal needed. The identity-token effect resolves the wallet.
+      setWalletError(null);
+      return;
+    }
+    setSigningIn(true);
+    try {
+      openLogin();
+    } finally {
+      // The modal is asynchronous; this only clears the button's busy state
+      // rather than holding it forever.
+      setTimeout(() => setSigningIn(false), 1500);
+    }
+  }, [ready, authenticated, openLogin]);
 
   const confirm = useCallback(() => {
     if (state.kind !== "ready") return;
@@ -355,13 +390,22 @@ export function RewardClaimPanel({
       */}
       {state.needsWallet ? (
         <div className="mt-5">
+          {/*
+            Context line, because a bare "Use Equixity" button is a mystery to
+            someone who has never used crypto. It states plainly what the button
+            will do and that no existing account is required.
+          */}
+          <p className="mb-3 text-sm text-slate">
+            Create an Equixity wallet with your email, or sign in to the one you
+            already have. Your reward goes straight to it.
+          </p>
           <button
             type="button"
-            onClick={() => login()}
-            disabled={!attested || submitting}
+            onClick={signIn}
+            disabled={!attested || submitting || signingIn}
             className="w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Use Equixity
+            {signingIn ? "Opening…" : "Use Equixity"}
           </button>
 
           {!showPaste ? (

@@ -22,8 +22,16 @@ const sans = Instrument_Sans({
   weight: ["400", "500", "600", "700"],
 });
 
+/**
+ * The root title is the neutral product name on purpose. Previously this was
+ * "Equixity - Merchant", which every route without its own metadata inherited,
+ * so the public landing page, the customer claim page and the customer wallet
+ * all announced themselves as merchant surfaces. Each of those now declares
+ * its own title; only the merchant dashboard (dashboard)/layout.tsx says
+ * "Merchant".
+ */
 export const metadata: Metadata = {
-  title: "Equixity - Merchant",
+  title: "Equixity",
   description:
     "Reward your customers with real tokenized stocks instead of points.",
 };
