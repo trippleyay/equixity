@@ -126,6 +126,26 @@ export function checkRewardConfirmRateLimit(ip: string): Promise<RateLimitResult
 }
 
 /**
+ * Customer wallet endpoints. holdings is a read (and re-read on every page
+ * view), transfer moves real tokens out of a customer's own wallet, so it is
+ * the tightest limit in the app.
+ */
+const customerHoldingsByIp = makeLimiter("equixity:rl:holdings:ip", 120, "60 s");
+const customerTransferByIp = makeLimiter("equixity:rl:xfer:ip", 10, "60 s");
+
+export function checkCustomerHoldingsRateLimit(
+  ip: string,
+): Promise<RateLimitResult> {
+  return check(customerHoldingsByIp, ip);
+}
+
+export function checkCustomerTransferRateLimit(
+  ip: string,
+): Promise<RateLimitResult> {
+  return check(customerTransferByIp, ip);
+}
+
+/**
  * Client IP for the per-IP limiter. Uses Vercel's documented helper and falls
  * back to the forwarded-for chain so local/other runtimes still produce a
  * stable identifier.

@@ -261,6 +261,16 @@ export function RewardClaimPanel({
         <p className="font-display text-lg font-medium text-ink">
           {amount ? `Done. ${amount} of ${asset} is yours.` : "Done. Your reward is yours."}
         </p>
+        <p className="mt-2 text-sm leading-relaxed text-ink/80">
+          It is in your wallet now. Sign in any time to see what you hold or send
+          it somewhere else.
+        </p>
+        <a
+          href="/wallet"
+          className="mt-4 inline-block rounded-full bg-equixity-deep px-5 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark"
+        >
+          View your rewards
+        </a>
       </div>
     );
   }
