@@ -1,5 +1,6 @@
 import Button from "@/components/site/Button";
 import Container from "@/components/site/Container";
+import CustomerRewardsButton from "@/components/CustomerRewardsButton";
 
 export default function Hero() {
   return (
@@ -20,10 +21,17 @@ export default function Hero() {
             Gift tokenized stock when customers buy from you. We handle the
             rewards, you focus on selling.
           </p>
-          <div className="mt-9">
+          <div className="mt-9 flex flex-wrap items-center gap-3">
             <Button href="/login" variant="onDark">
               Reward Customers
             </Button>
+            {/*
+              The customer's way back in. A shopper who earned stock last week
+              has no account and no bookmark, so without this the reward they
+              were given is unreachable. Outline, because it is the second
+              action in the hero, not the primary one.
+            */}
+            <CustomerRewardsButton />
           </div>
         </div>
       </Container>

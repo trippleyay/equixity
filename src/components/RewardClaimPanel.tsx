@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   usePrivy,
   useLogin,
@@ -38,13 +39,28 @@ type StatusState =
       kind: "ready";
       needsWallet: boolean;
     } & Display)
-  | ({ kind: "delivered" } & Display)
+  | ({ kind: "delivered"; recipient: string | null } & Display)
+  | { kind: "claiming"; reason: string | null }
   | { kind: "failed"; reason: string | null }
   | { kind: "error" };
 
+/**
+ * WHAT THIS MESSAGE MAY AND MAY NOT SAY.
+ *
+ * The previous wording ended "Nothing was charged against the reward balance",
+ * which was flatly wrong. Observed live: a request that timed out at the 60
+ * second ceiling had already swapped the reward AND delivered it to the
+ * customer's wallet, while the page told them nothing had happened. Claiming a
+ * specific financial outcome from a failed fetch is a guess, and a guess a
+ * customer will act on.
+ *
+ * So it says only what is known: we could not confirm the result. The reward
+ * page itself is the place that resolves it, because it reads status from the
+ * server rather than from this one request.
+ */
 const RETRY_MESSAGE =
-  "Something went wrong on our end and this didn't go through. " +
-  "Nothing was charged against the reward balance - try refreshing in a minute.";
+  "We could not confirm the result just now. Reload this page to see where your " +
+  "reward stands - it may already be in your wallet.";
 
 /**
  * "Apple Inc." -> "Apple Inc. stock", mirroring the notification badge, so both
@@ -71,6 +87,8 @@ export function RewardClaimPanel({
   attestationText: string;
 }) {
   const { ready, authenticated, getAccessToken } = usePrivy();
+  // The Equixity path ENDS in the customer dashboard, not on a success card.
+  const router = useRouter();
   // Privy writes the IDENTITY token to its store only on some app
   // configurations, and asking for one costs a rate-limited API call (see
   // resolveWallet below). Read it if it is already there, never chase it.
@@ -129,7 +147,9 @@ export function RewardClaimPanel({
         };
         if (json.status === "blocked") setState({ kind: "blocked", ...display });
         else if (json.status === "delivered")
-          setState({ kind: "delivered", ...display });
+          setState({ kind: "delivered", recipient: null, ...display });
+        else if (json.status === "claiming")
+          setState({ kind: "claiming", reason: json.reason ?? null });
         else if (json.status === "failed")
           setState({ kind: "failed", reason: json.reason ?? null });
         else if (json.status === "ready")
@@ -181,8 +201,11 @@ export function RewardClaimPanel({
   // SINGLE-FLIGHT: one resolve in flight at a time, so clicking twice cannot
   // stack requests.
   const resolvingRef = useRef(false);
-  const resolveWallet = useCallback(async () => {
-    if (resolvingRef.current || privyResolved) return;
+  const resolveWallet = useCallback(async (): Promise<string | null> => {
+    // Already resolved: hand the address straight back so the caller can carry
+    // on. Never a second request for something already known.
+    if (privyResolved) return privyResolved;
+    if (resolvingRef.current) return null;
     resolvingRef.current = true;
     setWalletError(null);
 
@@ -255,18 +278,20 @@ export function RewardClaimPanel({
       if (result.address) {
         setPrivyResolved(result.address);
         setWalletError(null);
-        return;
+        return result.address;
       }
 
       if (!result.ok && result.error) {
         // The server's own words, with any en/em dash stripped.
         setWalletError(clean(result.error));
-        return;
+        return null;
       }
 
       setWalletError("We could not verify your sign-in. Please try again.");
+      return null;
     } catch {
       setWalletError("We could not verify your sign-in. Please try again.");
+      return null;
     } finally {
       resolvingRef.current = false;
     }
@@ -304,6 +329,107 @@ export function RewardClaimPanel({
    *    Solana wallet on completion.
    */
   /**
+   * DELIVERY. The one place a reward ever moves.
+   *
+   * Called from exactly two controls, both of which are a customer pressing
+   * something: "Use Equixity" (once Privy has handed back an address) and
+   * "Confirm and Claim Reward" (once a pasted address has validated). It is NOT
+   * called from an effect any more. It used to be, and because Privy persists
+   * sessions a returning customer arrived already resolved, so ticking the
+   * attestation box swapped and sent their reward with no click on anything,
+   * while the visible button sat greyed out underneath. A customer's money is
+   * not a side effect of a checkbox.
+   *
+   * SYNCHRONOUS IN-FLIGHT GUARD: `submitting` disables the button, but React
+   * applies that a render later, so two clicks in the same tick could otherwise
+   * both fire. The ref closes that window.
+   */
+  const submittingRef = useRef(false);
+  const deliver = useCallback(
+    (walletAddress: string | null, claimMethod: string | null) => {
+      if (state.kind !== "ready" || submittingRef.current) return;
+
+      const display = {
+        amountUsd: state.amountUsd,
+        assetName: state.assetName,
+      };
+
+      submittingRef.current = true;
+      setSubmitting(true);
+      setWalletError(null);
+      setResult(null);
+
+      fetch("/api/public/reward-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rewardEventId,
+          walletAddress: walletAddress ?? undefined,
+          claimMethod: claimMethod ?? undefined,
+          attestationAccepted: attested,
+          view: viewIdRef.current,
+        }),
+      })
+        .then(async (r) => {
+          const json = await r.json().catch(() => ({}));
+          if (json.status === "delivered") {
+            setState({
+              kind: "delivered",
+              recipient: walletAddress,
+              ...display,
+            });
+            // The Equixity path ends in the customer's own dashboard, which is
+            // where a reward LIVES. A success card here would be the dead end
+            // this page used to be.
+            if (claimMethod === "privy_embedded") router.push("/wallet");
+            return;
+          }
+          if (json.status === "claiming") {
+            setState({ kind: "claiming", reason: json.reason ?? null });
+            return;
+          }
+          if (json.status === "blocked") {
+            setState({ kind: "blocked", ...display });
+            return;
+          }
+          if (json.status === "failed") {
+            setState({ kind: "failed", reason: json.reason ?? null });
+            return;
+          }
+          setResult({
+            message: clean(json.reason ?? json.error ?? RETRY_MESSAGE),
+          });
+        })
+        .catch(() => setResult({ message: RETRY_MESSAGE }))
+        .finally(() => {
+          submittingRef.current = false;
+          setSubmitting(false);
+        });
+    },
+    [state, attested, rewardEventId, router],
+  );
+
+  /**
+   * One press of "Use Equixity", start to finish.
+   *
+   * Resolve the address SERVER-SIDE (the browser is never the trusted source
+   * for where money goes), then deliver. If the address cannot be resolved, the
+   * reason is already on screen and nothing is submitted.
+   */
+  const resolveAndDeliver = useCallback(async () => {
+    if (state.kind !== "ready") return;
+    if (!attested) {
+      setWalletError("Please tick the confirmation box first.");
+      return;
+    }
+    setSigningIn(true);
+    const address = await resolveWallet();
+    setSigningIn(false);
+    if (!address) return;
+    deliver(address, "privy_embedded");
+  }, [state.kind, attested, resolveWallet, deliver]);
+
+  /**
    * `useLogin().login()` accepts callbacks, and `onComplete` is the one that
    * matters here. The previous code called `openLogin()` and then relied on a
    * 4-second timer to clear the busy label, with no completion handler at all.
@@ -327,10 +453,9 @@ export function RewardClaimPanel({
   const { login: openLogin } = useLogin({
     onComplete: () => {
       setSigningIn(false);
-      // The session exists now. The address is resolved from the ACCESS token,
-      // which Privy has by this point (resolveWallet reads it locally, and
-      // briefly waits if it is a beat behind).
-      void resolveWallet();
+      // The session exists now, so the press on "Use Equixity" is carried
+      // through: resolve the address, then deliver. The press WAS the choice.
+      void resolveAndDeliver();
     },
     onError: () => {
       setSigningIn(false);
@@ -338,8 +463,28 @@ export function RewardClaimPanel({
     },
   });
 
+  /**
+   * "USE EQUIXITY" IS THE CHOICE, AND THE PRESS IS THE CONSENT.
+   *
+   * One press, and the customer is done: sign in (or use the session already on
+   * this browser), resolve the address server-side, deliver, and land on the
+   * dashboard where the stock is visible. No second button, no wallet address
+   * shown to someone who has never used crypto, and no explanation of what a
+   * token account is. That is the whole point of this path for the audience it
+   * exists for.
+   *
+   * The reward page used to stop one step earlier, at a card reading "Your
+   * Equixity wallet is ready. The reward will go here: <address>" with a second
+   * confirm button under it. That address means nothing to the person it was
+   * printed for, and the extra button made the page look like a two-step form.
+   *
+   * `authenticated` is checked FIRST because Privy persists sessions: a
+   * returning customer is already signed in, and `login()` would refuse to
+   * reopen the modal.
+   */
   const signIn = useCallback(() => {
     setWalletError(null);
+    setResult(null);
 
     if (!ready) {
       setWalletError("Still getting things ready. Tap again in a moment.");
@@ -347,8 +492,7 @@ export function RewardClaimPanel({
     }
 
     if (authenticated) {
-      setSigningIn(true);
-      void resolveWallet().finally(() => setSigningIn(false));
+      void resolveAndDeliver();
       return;
     }
 
@@ -357,117 +501,36 @@ export function RewardClaimPanel({
     // Safety: never leave the label stuck on "Opening..." if the modal is
     // dismissed without firing either callback above.
     setTimeout(() => setSigningIn(false), 8000);
-  }, [ready, authenticated, openLogin, resolveWallet]);
+  }, [ready, authenticated, openLogin, resolveAndDeliver]);
 
   /**
-   * Delivery runs ONLY from a press on "Confirm & Claim Reward". The reward
-   * moves real money, so the customer's own click is the trigger: this function
-   * is called from those buttons and from nowhere else. It used to be called by
-   * an effect the moment a Privy wallet was resolved and the box was ticked,
-   * which claimed (and swapped) a reward for a customer who had chosen nothing.
+   * THE PASTED-ADDRESS PATH, AND THE CRYPTO PATH.
    *
-   * SYNCHRONOUS IN-FLIGHT GUARD: `submitting` disables the button, but React
-   * applies that a render later, so two clicks in the same tick could otherwise
-   * both fire. The ref closes that window.
+   * Both are one press of "Confirm and Claim Reward". Nothing here starts on
+   * its own: this is called from a button and from nowhere else.
    */
-  const submittingRef = useRef(false);
   const confirm = useCallback(() => {
-    if (state.kind !== "ready" || submittingRef.current) return;
-
-    const display = { amountUsd: state.amountUsd, assetName: state.assetName };
-
+    if (state.kind !== "ready") return;
     if (!attested) {
       setWalletError("Please tick the confirmation box first.");
       return;
     }
 
-    // WHERE THE REWARD GOES, from the choice the customer just made. An address
-    // typed into the paste field wins over a resolved Equixity wallet, because
-    // opening that field and typing an address IS the choice.
-    let walletAddress: string | null = null;
-    let claimMethod: string | null = null;
-    if (state.needsWallet) {
-      const pasted = walletInput.trim();
-      if (showPaste && pasted) {
-        const problem = walletValidationError(pasted);
-        if (problem) {
-          setWalletError(problem);
-          return;
-        }
-        walletAddress = pasted;
-        claimMethod = "pasted_address";
-      } else if (privyResolved) {
-        walletAddress = privyResolved;
-        claimMethod = "privy_embedded";
-      } else {
-        const problem = walletValidationError(pasted);
-        if (problem) {
-          setWalletError(problem);
-          return;
-        }
-        walletAddress = pasted;
-        claimMethod = "pasted_address";
-      }
+    if (!state.needsWallet) {
+      // Crypto: the destination is already fixed to the wallet that paid, so
+      // there is nothing for the customer to choose or to type.
+      deliver(null, "same_wallet");
+      return;
     }
 
-    submittingRef.current = true;
-    setSubmitting(true);
-    setWalletError(null);
-    setResult(null);
-    fetch("/api/public/reward-confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rewardEventId,
-        walletAddress: walletAddress ?? undefined,
-        claimMethod: claimMethod ?? undefined,
-        attestationAccepted: attested,
-        view: viewIdRef.current,
-      }),
-    })
-      .then(async (r) => {
-        const json = await r.json().catch(() => ({}));
-        if (r.ok && json.status === "delivered") {
-          setState({ kind: "delivered", ...display });
-          return;
-        }
-        if (r.status === 403 && json.status === "blocked") {
-          setState({ kind: "blocked", ...display });
-          return;
-        }
-        // A transient delivery failure is retryable; nothing was lost.
-        setResult({
-          message: clean(json.reason ?? json.error ?? RETRY_MESSAGE),
-        });
-      })
-      .catch(() => setResult({ message: RETRY_MESSAGE }))
-      .finally(() => {
-        submittingRef.current = false;
-        setSubmitting(false);
-      });
-  }, [
-    state,
-    attested,
-    showPaste,
-    walletInput,
-    privyResolved,
-    walletValidationError,
-    rewardEventId,
-  ]);
-
-  /**
-   * THE CLAIM NEVER FIRES ON ITS OWN.
-   *
-   * This effect used to submit as soon as a Privy wallet had been resolved AND
-   * the attestation box was ticked. Because Privy persists sessions, a returning
-   * customer arrived already "resolved", so ticking the box swapped and sent the
-   * reward with no click on anything, while the visible button sat greyed out
-   * underneath (it is disabled while a delivery is in flight) and the customer
-   * reasonably read that as a broken page. Observed live.
-   *
-   * A reward is worth real money and the destination is a real choice, so the
-   * only thing allowed to start delivery is a press on "Confirm & Claim Reward".
-   */
+    const pasted = walletInput.trim();
+    const problem = walletValidationError(pasted);
+    if (problem) {
+      setWalletError(problem);
+      return;
+    }
+    deliver(pasted, "pasted_address");
+  }, [state, attested, walletInput, walletValidationError, deliver]);
 
   if (state.kind === "loading") {
     return (
@@ -506,11 +569,20 @@ export function RewardClaimPanel({
     return (
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-soft">
         <p className="font-display text-lg font-medium text-ink">
-          {amount ? `Done. ${amount} of ${asset} is yours.` : "Done. Your reward is yours."}
+          {state.recipient
+            ? "Your reward has been sent to"
+            : amount
+              ? `Done. ${amount} of ${asset} is yours.`
+              : "Done. Your reward is yours."}
         </p>
+        {state.recipient && (
+          <p className="mt-1 break-all font-mono text-sm text-ink">
+            {state.recipient}
+          </p>
+        )}
         <p className="mt-2 text-sm leading-relaxed text-ink/80">
-          It is in your wallet now. Sign in any time to see what you hold or send
-          it somewhere else.
+          It is in that wallet now. Sign in any time to see what you hold or
+          send it somewhere else.
         </p>
         <a
           href="/wallet"
@@ -522,17 +594,46 @@ export function RewardClaimPanel({
     );
   }
 
+  /**
+   * STILL IN FLIGHT, AND SAID SO HONESTLY.
+   *
+   * The server has already broadcast a transaction it could not confirm inside
+   * its own time budget. That is not a failure and must not be dressed as one:
+   * the chain resolves it, reconciliation settles the row, and the asset is
+   * usually already there. The old page reported this exact situation as "did
+   * not go through" while the customer's wallet held the stock.
+   */
+  if (state.kind === "claiming") {
+    return (
+      <div className="rounded-2xl border border-ink/5 bg-white p-6 shadow-soft">
+        <p className="font-display text-lg font-medium text-ink">
+          Your reward is on its way.
+        </p>
+        <p className="mt-2 text-sm leading-relaxed text-slate">
+          {state.reason
+            ? clean(state.reason)
+            : "This settles on its own within a minute. Nothing else is needed from you."}
+        </p>
+        <a
+          href="/wallet"
+          className="mt-4 inline-block rounded-full border border-equixity-deep px-5 py-2.5 text-sm font-medium text-equixity-deep transition hover:bg-equixity-mist"
+        >
+          Check your rewards
+        </a>
+      </div>
+    );
+  }
+
   if (state.kind === "failed") {
     return (
       <div className="rounded-2xl border border-ink/5 bg-white p-6 shadow-soft">
         <p className="text-sm text-ink">
           This reward could not be delivered
-          {state.reason ? ` (${clean(state.reason)})` : ""}. Nothing was charged
-          against the reward balance.{" "}
+          {state.reason ? ` (${clean(state.reason)})` : ""}.{" "}
           <a href="/contact" className="font-medium text-equixity underline">
             Reach out
           </a>{" "}
-          if this keeps happening.
+          and we will look at it.
         </p>
       </div>
     );
@@ -575,28 +676,26 @@ export function RewardClaimPanel({
       </label>
 
       {/*
-        TWO DESTINATIONS, ONE SHOWN AT A TIME, AND A DELIVERY THAT ALWAYS WAITS
-        FOR ITS OWN BUTTON:
+        ONE PRIMARY ACTION, AND THE ADDRESS FIELD HIDDEN BEHIND A LINK.
 
-          1. a pasted address     - revealed by "I already have a wallet";
-          2. the Equixity wallet  - shown only AFTER the customer presses "Use
-                                    Equixity" and our server hands back the
-                                    address, and named on screen so the choice
-                                    is visible;
-          3. nothing chosen yet   - both are offered and "Use Equixity" is the
-                                    only primary action, because two equally
-                                    weighted buttons made a non-crypto customer
-                                    stop and choose between two things they did
-                                    not understand.
+          1. nothing chosen yet - "Use Equixity" is the only visible action.
+             That single press carries the whole flow: sign in, resolve the
+             address, deliver, land on the customer dashboard. It replaced a
+             step that printed a wallet address at someone who has never used
+             crypto and then asked them to confirm it, which was asking them to
+             approve something they had no way to judge.
 
-        In all three cases delivery starts from "Confirm & Claim Reward" alone.
+          2. "I already have a wallet" - reveals the paste field, and only then
+             does a confirm button exist. Typing an address IS the choice.
+
+        Nothing is delivered without a press on one of those two controls.
       */}
       {state.needsWallet ? (
         <div className="mt-5">
           {showPaste ? (
             /*
-              Destination 1 of 2: an address the customer pastes. Nothing here
-              touches Privy, and delivery waits for the button under the field.
+              The customer's own wallet, pasted. Nothing here touches Privy, and
+              delivery waits for the button under the field.
             */
             <div className="mt-4">
               <label
@@ -625,7 +724,7 @@ export function RewardClaimPanel({
                 disabled={submitting || !attested || !walletInput.trim()}
                 className="mt-3 w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? "Delivering…" : "Confirm & Claim Reward"}
+                {submitting ? "Delivering…" : "Confirm and Claim Reward"}
               </button>
               <button
                 type="button"
@@ -637,38 +736,6 @@ export function RewardClaimPanel({
                 className="mt-2 w-full text-center text-xs text-slate underline underline-offset-4 transition hover:text-ink"
               >
                 Use Equixity instead
-              </button>
-            </div>
-          ) : privyResolved ? (
-            /*
-              Destination 2 of 2, AFTER the customer chose it: the Equixity
-              wallet they just set up or signed in to. The address is named so
-              the choice is visible, and delivery waits for this button.
-            */
-            <div>
-              <p className="mb-1 text-sm text-slate">
-                Your Equixity wallet is ready. The reward will go here:
-              </p>
-              <p className="mb-4 font-mono text-xs text-ink/70">
-                {privyResolved}
-              </p>
-              <button
-                type="button"
-                onClick={confirm}
-                disabled={submitting || !attested}
-                className="w-full rounded-full bg-equixity px-4 py-3 text-sm font-semibold text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitting ? "Delivering…" : "Confirm & Claim Reward"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPaste(true);
-                  setWalletError(null);
-                }}
-                className="mt-2 w-full text-center text-xs text-slate underline underline-offset-4 transition hover:text-ink"
-              >
-                I already have a wallet
               </button>
             </div>
           ) : (

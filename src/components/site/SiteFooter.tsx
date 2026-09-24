@@ -1,14 +1,25 @@
 import Link from "next/link";
 import Wordmark from "./Wordmark";
 import Container from "./Container";
+import CustomerRewardsButton from "@/components/CustomerRewardsButton";
 
-const columns = [
+/**
+ * `customer: true` marks an entry that has to run code (Privy sign-in) rather
+ * than navigate, so it is rendered as the shared customer button styled exactly
+ * like the links beside it. Keeping it in the same list means the footer column
+ * reads as one list of destinations, which is what it is.
+ */
+const columns: Array<{
+  heading: string;
+  links: Array<{ href: string | null; label: string; customer?: boolean }>;
+}> = [
   {
     heading: "Product",
     links: [
       { href: "/#how-it-works", label: "How it works" },
       { href: "/docs", label: "Docs" },
       { href: "/login", label: "Merchant" },
+      { href: null, label: "Customer", customer: true },
     ],
   },
   {
@@ -44,13 +55,20 @@ export default function SiteFooter() {
             <p className="text-sm font-medium text-ink">{column.heading}</p>
             <ul className="mt-4 space-y-3">
               {column.links.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-sm text-slate transition-colors hover:text-equixity-deep"
-                  >
-                    {link.label}
-                  </Link>
+                <li key={link.label}>
+                  {link.customer ? (
+                    <CustomerRewardsButton
+                      label={link.label}
+                      variant="footerLink"
+                    />
+                  ) : (
+                    <Link
+                      href={link.href ?? "/"}
+                      className="text-sm text-slate transition-colors hover:text-equixity-deep"
+                    >
+                      {link.label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

@@ -5,11 +5,11 @@ import {
   TransactionMessage,
   VersionedTransaction,
   type AddressLookupTableAccount,
-  type Blockhash,
 } from "@solana/web3.js";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
+  getAccount,
   getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -18,7 +18,6 @@ import { getSolanaConnection } from "@/lib/solana/connection";
 import { getFeePayerKeypair } from "@/lib/solana/fee-payer";
 import { decryptSecretKey } from "@/lib/crypto/deposit-keys";
 import { getDepositAccountForSigning } from "@/lib/services/merchant";
-import { FUNDING_COMMITMENT } from "@/lib/solana/constants";
 import {
   buildSwapInstructions,
   quoteUsdcToAsset,
@@ -131,6 +130,73 @@ async function recordSwapSignature(
     .from("reward_claims")
     .update({ swap_transaction_signature: signature, updated_at: new Date().toISOString() })
     .eq("id", claimId);
+}
+
+/**
+ * HOW LONG TO WATCH THE CHAIN, AND WHY IT IS BOUNDED.
+ *
+ * The first version used `conn.confirmTransaction({signature, blockhash,
+ * lastValidBlockHeight})` and waited for it to return. Observed live, that call
+ * took 41 seconds to report a transaction that had landed in the SAME SECOND it
+ * was sent. A 41 second wait is survivable on its own; it is not survivable when
+ * the whole request has a 60 second ceiling on Vercel, because the delivery leg
+ * then ran with 19 seconds left and the function was killed mid-confirmation.
+ * The customer saw "something went wrong", the row stayed 'claiming', and the
+ * asset had in fact been delivered.
+ *
+ * So the waiting is explicit and bounded here: poll the signature status
+ * directly, and if the outcome is still unknown when the budget runs out, return
+ * 'indeterminate' and let reconciliation settle it later. NEVER guess, and never
+ * refund something the chain might still execute.
+ *
+ * Budgets are deliberately a fraction of the 60 second route ceiling, so that a
+ * slow swap leg still leaves room for the delivery leg to complete.
+ */
+const CONFIRM_POLL_MS = 800;
+const SWAP_CONFIRM_BUDGET_MS = 18_000;
+const DELIVERY_CONFIRM_BUDGET_MS = 14_000;
+
+async function waitForOutcome(
+  signature: string,
+  budgetMs: number,
+): Promise<"confirmed" | "notlanded" | "indeterminate"> {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    const verdict = await resolveOutcome(signature, null);
+    if (verdict !== "indeterminate") return verdict;
+    if (Date.now() >= deadline) return "indeterminate";
+    await new Promise((r) => setTimeout(r, CONFIRM_POLL_MS));
+  }
+}
+
+/**
+ * What the CUSTOMER's token account holds right now, 0n when it does not exist.
+ *
+ * This is the idempotency signal for the delivery leg. A retry must never send
+ * the asset twice, and the only trustworthy answer to "has this already been
+ * delivered" is the chain itself, never a boolean in our own row.
+ */
+async function customerHolding(
+  mint: PublicKey,
+  owner: PublicKey,
+): Promise<bigint> {
+  try {
+    const ata = getAssociatedTokenAddressSync(
+      mint,
+      owner,
+      true,
+      TOKEN_2022_PROGRAM_ID,
+    );
+    const acc = await getAccount(
+      getSolanaConnection(),
+      ata,
+      "confirmed",
+      TOKEN_2022_PROGRAM_ID,
+    );
+    return acc.amount;
+  } catch {
+    return 0n;
+  }
 }
 
 async function failClaim(
@@ -260,8 +326,6 @@ export async function executeRewardClaim(params: {
 
   // --- 3. Quote, build, sign and submit the swap leg -----------------------
   let swapSignature: string;
-  let swapBlockhash: string;
-  let swapLastValidBlockHeight: number;
 
   try {
     const quote = await quoteUsdcToAsset({
@@ -298,8 +362,6 @@ export async function executeRewardClaim(params: {
     );
 
     const latest = await conn.getLatestBlockhash();
-    swapBlockhash = latest.blockhash;
-    swapLastValidBlockHeight = latest.lastValidBlockHeight;
 
     // The Equixity fee payer is the transaction fee payer, so the merchant's
     // deposit key never pays a network fee (spec section 6 step 5). This is
@@ -359,115 +421,158 @@ export async function executeRewardClaim(params: {
   // reconcilable instead of a stuck row with no trace of what was broadcast.
   await recordSwapSignature(claimId, swapSignature);
 
-  // --- 4. Confirm the swap leg. Never guess about the outcome. ------------
-  try {
-    const result = await conn.confirmTransaction(
-      {
-        signature: swapSignature,
-        blockhash: swapBlockhash,
-        lastValidBlockHeight: swapLastValidBlockHeight,
-      },
-      FUNDING_COMMITMENT,
-    );
-    if (result.value.err) throw new Error("swap executed with a failure");
-  } catch {
-    const verdict = await resolveOutcome(swapSignature, swapBlockhash as Blockhash);
-    if (verdict === "confirmed") {
-      // It did land — fall through to the delivery leg.
-    } else if (verdict === "notlanded") {
-      // "Not landed" here covers two different realities, and the chain can tell
-      // them apart: a signature that exists WITH an error did execute and failed,
-      // a signature that does not exist never executed at all. Both mean the
-      // reserve should be released, because the USDC never left, but only one of
-      // them can be explained. Record what the chain actually said instead of the
-      // vague "did not confirm" that sent a real debugging session chasing the
-      // wrong wallet.
-      const onChain = await describeFailureSignature(swapSignature);
-      await failClaim(
-        claimId,
-        exec.merchant_id,
-        exec.reward_usdc_units,
-        `swap_not_confirmed_on_chain: ${onChain ?? "no on-chain trace"}`,
-      );
-      return {
-        status: "failed",
-        signature: swapSignature,
-        reason: onChain
-          ? `The swap failed on chain (${onChain}), so the reward was returned to the merchant.`
-          : "The swap did not confirm, so the reward was returned to the merchant.",
-      };
-    } else {
-      // Indeterminate: leave it in 'claiming'. Refunding here could pay twice if
-      // the transaction lands after all. Reconciled on a later view.
-      return {
-        status: "claiming",
-        signature: swapSignature,
-        reason: "The swap is still confirming; this will resolve automatically.",
-      };
-    }
-  }
-
-  // --- 5. Delivery leg: measure what actually arrived, then transfer it ----
-  // The ACTUAL received amount is read from the chain (not the quote), so the
-  // customer gets exactly what the swap produced.
-  const received = await assetReceivedByOwner(
-    swapSignature,
-    exec.asset_mint,
-    merchantPubkey,
-  );
-  const deliverUnits = received ?? exec.reward_amount_units;
-  if (deliverUnits <= 0n) {
+  // --- 4. Confirm the swap leg, inside a bounded budget --------------------
+  const swapVerdict = await waitForOutcome(swapSignature, SWAP_CONFIRM_BUDGET_MS);
+  if (swapVerdict === "notlanded") {
+    // The chain tells two realities apart: a signature that exists WITH an
+    // error executed and failed, a signature that does not exist never executed
+    // at all. Both mean the USDC never left, so the reserve is released either
+    // way; only one of them can be explained, so record what the chain said.
+    const onChain = await describeFailureSignature(swapSignature);
     await failClaim(
       claimId,
       exec.merchant_id,
-      0n, // no USDC refund: the value is now held as the swapped asset
-      "swap_landed_but_no_asset_received",
+      exec.reward_usdc_units,
+      `swap_not_confirmed_on_chain: ${onChain ?? "no on-chain trace"}`,
     );
     return {
       status: "failed",
       signature: swapSignature,
-      reason: "The swap landed but produced no deliverable asset; this needs manual review.",
+      reason: onChain
+        ? `The swap failed on chain (${onChain}), so the reward was returned to the merchant.`
+        : "The swap did not confirm, so the reward was returned to the merchant.",
+    };
+  }
+  if (swapVerdict === "indeterminate") {
+    // Still in flight when the budget ran out. Left to reconciliation, because
+    // refunding here could pay twice if the transaction lands after all.
+    return {
+      status: "claiming",
+      signature: swapSignature,
+      reason:
+        "The swap is still confirming. This settles on its own within a minute, and there is nothing to retry.",
     };
   }
 
-  const mintPubkey = new PublicKey(exec.asset_mint);
+  // --- 5 and 6. Deliver the asset, then settle the row ---------------------
+  return deliverRewardAsset({
+    claimId,
+    merchantId: exec.merchant_id,
+    merchantPubkey,
+    customerPubkey,
+    assetMint: exec.asset_mint,
+    assetDecimals: exec.asset_decimals,
+    swapSignature,
+    expectedUnits: exec.reward_amount_units,
+    depositKeypair,
+  });
+}
+/**
+ * THE DELIVERY LEG, ON ITS OWN, SO A KILLED REQUEST CAN BE FINISHED LATER.
+ *
+ * Extracted from executeRewardClaim because delivery is the half of the flow that
+ * can outlive its request. Observed live: the swap landed in one second, the
+ * confirmation call took 41 seconds to say so, the delivery transaction was sent
+ * at 19:37:26, and the Vercel function died at 19:37:44 while confirming it. The
+ * customer held the asset, our row said 'claiming', and the page told them
+ * something had failed. The chain was right and the record was wrong.
+ *
+ * TWO RULES MAKE A RETRY SAFE:
+ *   1. the amount delivered is read from the SWAP TRANSACTION itself, so it does
+ *      not drift if the merchant's balance has moved since;
+ *   2. if the customer's token account ALREADY holds that amount, this leg has
+ *      already run, so the row is settled instead of the asset being sent twice.
+ *
+ * NO REFUND ON FAILURE HERE. Once the swap has landed the value exists as the
+ * reward asset, so releasing the USDC reserve would pay the merchant twice. This
+ * fails the row with the reason recorded and no refund, which is the honest
+ * state: the merchant holds the swapped asset and a human should look.
+ */
+export async function deliverRewardAsset(params: {
+  claimId: string;
+  merchantId: string;
+  merchantPubkey: PublicKey;
+  customerPubkey: PublicKey;
+  assetMint: string;
+  assetDecimals: number;
+  swapSignature: string;
+  expectedUnits: bigint;
+  depositKeypair: Keypair;
+}): Promise<RewardClaimOutcome> {
+  const conn = getSolanaConnection();
+  const feePayer = getFeePayerKeypair();
+  const mintPubkey = new PublicKey(params.assetMint);
   const sourceAta = getAssociatedTokenAddressSync(
     mintPubkey,
-    merchantPubkey,
+    params.merchantPubkey,
     true,
     TOKEN_2022_PROGRAM_ID,
   );
   const customerAta = getAssociatedTokenAddressSync(
     mintPubkey,
-    customerPubkey,
+    params.customerPubkey,
     true,
     TOKEN_2022_PROGRAM_ID,
   );
 
+  // Rule 1: the swap's own output, read from its transaction.
+  const received = await assetReceivedByOwner(
+    params.swapSignature,
+    params.assetMint,
+    params.merchantPubkey,
+  );
+  const deliverUnits = received ?? params.expectedUnits;
+  if (deliverUnits <= 0n) {
+    await failClaim(
+      params.claimId,
+      params.merchantId,
+      0n, // the value is held as the swapped asset, so no USDC refund
+      "swap_landed_but_no_asset_received",
+    );
+    return {
+      status: "failed",
+      signature: params.swapSignature,
+      reason:
+        "The swap landed but produced no deliverable asset; this needs manual review.",
+    };
+  }
+
+  // Rule 2: already delivered? Settle it, never resend it.
+  const alreadyHeld = await customerHolding(mintPubkey, params.customerPubkey);
+  if (alreadyHeld >= deliverUnits) {
+    await completeClaim(params.claimId, params.swapSignature);
+    return {
+      status: "delivered",
+      signature: params.swapSignature,
+      reason: null,
+    };
+  }
+
   let transferSignature: string;
   try {
-    // Reward assets are Token-2022, so both the transfer and the customer's ATA
-    // must be built with TOKEN_2022_PROGRAM_ID — a legacy-program instruction
+    // Reward assets are Token-2022, so the transfer and the customer's ATA must
+    // both be built with TOKEN_2022_PROGRAM_ID. A legacy-program instruction
     // here would be invalid.
     const transferIx = createTransferCheckedInstruction(
       sourceAta,
       mintPubkey,
       customerAta,
-      merchantPubkey,
+      params.merchantPubkey,
       deliverUnits,
-      exec.asset_decimals,
+      params.assetDecimals,
       [],
       TOKEN_2022_PROGRAM_ID,
     );
     // The fee payer covers the one-time rent when the customer's wallet has
-    // never held this asset before — the realistic first-claim case.
-    const createCustomerAtaIx = createAssociatedTokenAccountIdempotentInstruction(
-      feePayer.publicKey,
-      customerAta,
-      customerPubkey,
-      mintPubkey,
-      TOKEN_2022_PROGRAM_ID,
-    );
+    // never held this asset before, which is the realistic first-claim case.
+    const createCustomerAtaIx =
+      createAssociatedTokenAccountIdempotentInstruction(
+        feePayer.publicKey,
+        customerAta,
+        params.customerPubkey,
+        mintPubkey,
+        TOKEN_2022_PROGRAM_ID,
+      );
 
     const latest = await conn.getLatestBlockhash();
     const tx = new Transaction();
@@ -475,42 +580,72 @@ export async function executeRewardClaim(params: {
     tx.recentBlockhash = latest.blockhash;
     tx.lastValidBlockHeight = latest.lastValidBlockHeight;
     tx.add(createCustomerAtaIx, transferIx);
-    tx.sign(depositKeypair, feePayer);
+    tx.sign(params.depositKeypair, feePayer);
+
+    // Simulate before sending, for the same reason the swap leg does: a doomed
+    // transaction otherwise costs a fee and a slot and leaves an on-chain error
+    // to explain from logs later.
+    const simulation = await conn.simulateTransaction(tx);
+    if (simulation.value.err) {
+      const refusal = (simulation.value.logs ?? [])
+        .filter((line) =>
+          /insufficient|custom program error|failed/i.test(line),
+        )
+        .slice(-1)[0];
+      throw new Error(
+        refusal
+          ? `simulation failed: ${refusal}`
+          : `simulation failed: ${JSON.stringify(simulation.value.err)}`,
+      );
+    }
 
     transferSignature = await conn.sendRawTransaction(tx.serialize(), {
       skipPreflight: true,
       maxRetries: 2,
     });
-
-    const conf = await conn.confirmTransaction(
-      {
-        signature: transferSignature,
-        blockhash: latest.blockhash,
-        lastValidBlockHeight: latest.lastValidBlockHeight,
-      },
-      FUNDING_COMMITMENT,
-    );
-    if (conf.value.err) throw new Error("transfer executed with a failure");
   } catch (e) {
-    // The swap DID land, so the value now sits with the merchant as the reward
-    // asset. That makes refunding the USDC WRONG — it would pay them twice.
-    // So: terminal failure, no refund, reason recorded, and the swap signature
-    // already stored above so this can be traced on-chain.
     await failClaim(
-      claimId,
-      exec.merchant_id,
+      params.claimId,
+      params.merchantId,
       0n,
       `transfer_out_failed_swap_landed: ${(e as Error).message}`,
     );
     return {
       status: "failed",
-      signature: swapSignature,
-      reason:
-        "The swap completed but delivery to the customer failed. The merchant holds the swapped asset; this needs manual review.",
+      signature: params.swapSignature,
+      reason: `The swap completed but delivery to the customer failed (${(e as Error).message}). The merchant holds the swapped asset; this needs manual review.`,
     };
   }
 
-  // --- 6. Delivered (spec section 6 step 6) -------------------------------
-  await completeClaim(claimId, transferSignature);
-  return { status: "delivered", signature: transferSignature, reason: null };
+  const verdict = await waitForOutcome(
+    transferSignature,
+    DELIVERY_CONFIRM_BUDGET_MS,
+  );
+  if (verdict === "confirmed") {
+    await completeClaim(params.claimId, transferSignature);
+    return { status: "delivered", signature: transferSignature, reason: null };
+  }
+  if (verdict === "indeterminate") {
+    return {
+      status: "claiming",
+      signature: transferSignature,
+      reason:
+        "Your reward is on its way. This settles on its own within a minute.",
+    };
+  }
+
+  const onChain = await describeFailureSignature(transferSignature);
+  await failClaim(
+    params.claimId,
+    params.merchantId,
+    0n,
+    `delivery_not_confirmed_swap_landed: ${onChain ?? "no on-chain trace"}`,
+  );
+  return {
+    status: "failed",
+    signature: transferSignature,
+    reason: onChain
+      ? `The reward could not be delivered to that wallet (${onChain}). The merchant still holds it, so please reach out.`
+      : "The reward could not be delivered to that wallet. The merchant still holds it, so please reach out.",
+  };
 }

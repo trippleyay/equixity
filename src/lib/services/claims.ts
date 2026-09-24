@@ -103,15 +103,35 @@ export async function listClaimsForMerchant(
 }
 
 /** Claims stuck mid-flight, for poll-on-view reconciliation (spec section 6.8). */
-export async function listStaleClaimingClaims(): Promise<
-  Array<{ id: string; reward_event_id: string; merchant_id: string; swap_transaction_signature: string | null; reward_usdc_units: string | null }>
-> {
+export type StaleClaimRow = {
+  id: string;
+  reward_event_id: string;
+  merchant_id: string;
+  swap_transaction_signature: string | null;
+  reward_usdc_units: string | null;
+  reward_amount_units: string | null;
+  asset_mint: string | null;
+  asset_decimals: number | null;
+  customer_wallet_address: string | null;
+};
+
+/**
+ * Everything reconciliation needs to FINISH a delivery, not just judge it.
+ *
+ * The first version pulled only the signature and the amount, which was enough
+ * to mark a row delivered but not enough to actually deliver anything. Observed
+ * live: a row sat in 'claiming' while the asset had in fact reached the
+ * customer, and the only thing the reconciler could have done with that row was
+ * claim an outcome it had not verified. The mint, the decimals and the customer's
+ * address are here so the delivery leg can be re-run safely instead.
+ */
+export async function listStaleClaimingClaims(): Promise<StaleClaimRow[]> {
   const service = getServiceClient();
   const cutoff = new Date(Date.now() - 60_000).toISOString();
   const { data } = await service
     .from("reward_claims")
     .select(
-      "id, reward_event_id, swap_transaction_signature, updated_at, reward_events(merchant_id, reward_usdc_units::text)",
+      "id, reward_event_id, swap_transaction_signature, customer_wallet_address, updated_at, reward_events(merchant_id, reward_usdc_units::text, reward_amount_units::text, reward_assets(mint_address, decimals))",
     )
     .eq("status", "claiming")
     .lt("updated_at", cutoff);
@@ -120,15 +140,21 @@ export async function listStaleClaimingClaims(): Promise<
       id: string;
       reward_event_id: string;
       swap_transaction_signature: string | null;
+      customer_wallet_address: string | null;
       reward_events: EmbeddedEvent | EmbeddedEvent[] | null;
     };
     const event = first(row.reward_events);
+    const asset = event ? first(event.reward_assets) : null;
     return {
       id: row.id,
       reward_event_id: row.reward_event_id,
       merchant_id: event?.merchant_id ?? "",
       swap_transaction_signature: row.swap_transaction_signature,
       reward_usdc_units: event?.reward_usdc_units ?? null,
+      reward_amount_units: event?.reward_amount_units ?? null,
+      asset_mint: asset?.mint_address ?? null,
+      asset_decimals: asset?.decimals ?? null,
+      customer_wallet_address: row.customer_wallet_address ?? null,
     };
   });
 }

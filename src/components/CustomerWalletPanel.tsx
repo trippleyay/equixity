@@ -273,7 +273,7 @@ export function CustomerWalletPanel() {
 
       {!loading && !error && holdings.length === 0 && (
         <div className="rounded-2xl border border-ink/5 bg-white p-6 text-sm leading-relaxed text-slate shadow-soft">
-          You do not hold any rewards yet. They appear here as soon as a
+          You don&apos;t have any rewards yet. They appear here the moment a
           merchant sends you one.
         </div>
       )}
