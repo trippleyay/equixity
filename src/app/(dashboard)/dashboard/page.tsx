@@ -91,7 +91,6 @@ export default async function OverviewPage({
         ) : (
           <>
             <div className="mt-4 flex items-baseline gap-3 rounded-xl bg-mist/50 px-4 py-4">
-              <div className="text-xs text-slate">Rewards</div>
               <div className="font-display text-3xl font-medium text-ink">
                 {issued.length.toLocaleString()}
               </div>
