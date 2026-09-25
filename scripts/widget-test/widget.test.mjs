@@ -36,19 +36,29 @@ const NO_CALLS = { fetchImpl: async () => { throw new Error("must not be called"
 // --- 2. Flutterwave success page: tx_ref in the address ---------------------
 {
   console.log("\n[2] Flutterwave redirect: polls by tx_ref");
+  const apiAmountUsd = "2.40";
+  const apiAssetName = "Tesla";
   const { fetchCalls, badgeText, errors } = await run({
     url: "https://shop.test/thanks?status=successful&tx_ref=order_7841&transaction_id=42",
     tags: [tag()],
     fetchImpl: async (u) => {
       if (u.includes("externalOrderId=order_7841")) {
-        return okJson({ exists: true, rewardEventId: "flw-1", amountUsd: "2.40", assetName: "Apple" });
+        return okJson({ exists: true, rewardEventId: "flw-1", amountUsd: apiAmountUsd, assetName: apiAssetName });
       }
       throw new Error("unexpected url " + u);
     },
   });
   check("polled by tx_ref", fetchCalls.length === 1 && fetchCalls[0].url.includes("externalOrderId=order_7841"), JSON.stringify(fetchCalls.map((c) => c.url)));
   check("transaction_id was not used as the reference", !fetchCalls.some((c) => c.url.includes("42")), JSON.stringify(fetchCalls.map((c) => c.url)));
-  check("badge rendered", badgeText.includes("2.40"), badgeText);
+  check("badge renders", badgeText.includes("2.40"), badgeText);
+  check(
+    "notification copy uses the API amount and stock name",
+    badgeText.includes("Your order just earned you") &&
+      badgeText.includes(`$${apiAmountUsd}`) &&
+      badgeText.includes(`${apiAssetName} stock`) &&
+      badgeText.includes("Click here to grab your reward"),
+    badgeText,
+  );
   check("no console errors", errors.length === 0, errors.join("; "));
 }
 

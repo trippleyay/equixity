@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   usePrivy,
   useLogin,
@@ -39,7 +38,11 @@ type StatusState =
       kind: "ready";
       needsWallet: boolean;
     } & Display)
-  | ({ kind: "delivered"; recipient: string | null } & Display)
+  | ({
+      kind: "delivered";
+      recipient: string | null;
+      claimMethod: string | null;
+    } & Display)
   | { kind: "claiming"; reason: string | null }
   | { kind: "failed"; reason: string | null }
   | { kind: "error" };
@@ -81,14 +84,15 @@ function amountLabelOf(amountUsd: string | null | undefined): string | null {
 export function RewardClaimPanel({
   rewardEventId,
   attestationText,
+  onDelivered,
 }: {
   rewardEventId: string;
   /** Exact approved attestation sentence, server-derived. */
   attestationText: string;
+  /** Lets the page switch its heading when delivery completes. */
+  onDelivered?: () => void;
 }) {
   const { ready, authenticated, getAccessToken } = usePrivy();
-  // The Equixity path ENDS in the customer dashboard, not on a success card.
-  const router = useRouter();
   // Privy writes the IDENTITY token to its store only on some app
   // configurations, and asking for one costs a rate-limited API call (see
   // resolveWallet below). Read it if it is already there, never chase it.
@@ -147,7 +151,14 @@ export function RewardClaimPanel({
         };
         if (json.status === "blocked") setState({ kind: "blocked", ...display });
         else if (json.status === "delivered")
-          setState({ kind: "delivered", recipient: null, ...display });
+          setState({
+            kind: "delivered",
+            recipient: json.customerWalletAddress
+              ? clean(json.customerWalletAddress)
+              : null,
+            claimMethod: json.claimMethod ? String(json.claimMethod) : null,
+            ...display,
+          });
         else if (json.status === "claiming")
           setState({ kind: "claiming", reason: json.reason ?? null });
         else if (json.status === "failed")
@@ -167,6 +178,10 @@ export function RewardClaimPanel({
       cancelled = true;
     };
   }, [rewardEventId]);
+
+  useEffect(() => {
+    if (state.kind === "delivered") onDelivered?.();
+  }, [state.kind, onDelivered]);
 
   // Privy: once signed in, resolve the Solana address SERVER-SIDE. The browser
   // is never the trusted source for the address.
@@ -376,12 +391,9 @@ export function RewardClaimPanel({
             setState({
               kind: "delivered",
               recipient: walletAddress,
+              claimMethod,
               ...display,
             });
-            // The Equixity path ends in the customer's own dashboard, which is
-            // where a reward LIVES. A success card here would be the dead end
-            // this page used to be.
-            if (claimMethod === "privy_embedded") router.push("/wallet");
             return;
           }
           if (json.status === "claiming") {
@@ -406,7 +418,7 @@ export function RewardClaimPanel({
           setSubmitting(false);
         });
     },
-    [state, attested, rewardEventId, router],
+    [state, attested, rewardEventId],
   );
 
   /**
@@ -566,30 +578,38 @@ export function RewardClaimPanel({
   if (state.kind === "delivered") {
     const amount = amountLabelOf(state.amountUsd);
     const asset = assetLabelOf(state.assetName);
+    const deliveredAmount = amount ? `${amount} of ${asset}` : "Your reward";
     return (
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-soft">
-        <p className="font-display text-lg font-medium text-ink">
-          {state.recipient
-            ? "Your reward has been sent to"
-            : amount
-              ? `Done. ${amount} of ${asset} is yours.`
-              : "Done. Your reward is yours."}
+      <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-equixity-mist/50 p-6 text-center shadow-soft">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/purple-giftbox.svg"
+          alt=""
+          width={88}
+          height={92}
+          className="mx-auto h-20 w-auto"
+        />
+        <h2 className="mt-3 font-display text-2xl font-medium text-ink">
+          Your reward has been delivered
+        </h2>
+        <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-ink/80">
+          {deliveredAmount} has been sent to your wallet
+          {state.recipient ? (
+            <>
+              {" "}
+              <span className="font-mono break-all">{state.recipient}</span>
+            </>
+          ) : null}
+          .
         </p>
-        {state.recipient && (
-          <p className="mt-1 break-all font-mono text-sm text-ink">
-            {state.recipient}
-          </p>
-        )}
-        <p className="mt-2 text-sm leading-relaxed text-ink/80">
-          It is in that wallet now. Sign in any time to see what you hold or
-          send it somewhere else.
-        </p>
-        <a
-          href="/wallet"
-          className="mt-4 inline-block rounded-full bg-equixity-deep px-5 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark"
-        >
-          View your rewards
-        </a>
+        {state.claimMethod === "privy_embedded" ? (
+          <a
+            href="/wallet"
+            className="mt-5 inline-block rounded-full bg-equixity-deep px-5 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark"
+          >
+            View your rewards
+          </a>
+        ) : null}
       </div>
     );
   }

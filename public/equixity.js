@@ -123,7 +123,7 @@
   function assetLabel(assetName) {
     var name = sanitize(assetName);
     if (!name) return "a reward";
-    // "Apple" -> "Apple stock"; a name that already says stock stays as-is.
+    // Append "stock" unless the API's asset name already includes it.
     return /stock/i.test(name) ? name : name + " stock";
   }
 
@@ -136,8 +136,10 @@
     host.setAttribute("role", "status");
     host.style.cssText = [
       "position:fixed",
-      "left:16px",
-      "bottom:16px",
+      "left:50%",
+      "top:50%",
+      "transform:translate(-50%,-50%)",
+      "width:min(560px,calc(100vw - 32px))",
       "z-index:2147483000",
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
     ].join(";");
@@ -145,20 +147,30 @@
     var shadow = host.attachShadow({ mode: "open" });
     var style = document.createElement("style");
     style.textContent =
-      ".eqx-pill{display:flex;align-items:center;gap:10px;max-width:340px;" +
-      "background:#ffffff;border:1px solid #ca9ad0;border-radius:999px;" +
-      "box-shadow:0 8px 24px rgba(65,11,83,0.18);padding:10px 14px;}" +
-      ".eqx-link{color:#1f2430;font-size:14px;line-height:1.4;" +
-      "text-decoration:none;}" +
-      ".eqx-link strong{color:#691280;}" +
-      ".eqx-close{flex:none;width:22px;height:22px;border:0;border-radius:50%;" +
-      "background:#f3eef5;color:#691280;font-size:13px;line-height:1;" +
-      "cursor:pointer;}" +
-      ".eqx-close:hover{background:#ca9ad0;color:#ffffff;}";
+      ".eqx-card{display:flex;align-items:center;gap:18px;box-sizing:border-box;" +
+      "background:linear-gradient(135deg,rgba(255,255,255,0.96),rgba(239,227,247,0.92));" +
+      "border:1px solid rgba(105,18,128,0.24);border-radius:18px;" +
+      "box-shadow:0 24px 70px rgba(41,7,53,0.28),inset 0 1px 0 rgba(255,255,255,0.9);" +
+      "padding:24px 24px 24px 22px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);}" +
+      ".eqx-logo{width:66px;height:66px;flex:none;object-fit:contain;}" +
+      ".eqx-link{display:block;flex:1;color:#1f2430;font-size:16px;line-height:1.5;" +
+      "text-decoration:none;font-weight:450;}" +
+      ".eqx-link strong{color:#691280;font-weight:700;}" +
+      ".eqx-close{flex:none;width:32px;height:32px;border:0;border-radius:10px;" +
+      "background:rgba(105,18,128,0.09);color:#691280;font-size:20px;line-height:1;" +
+      "cursor:pointer;transition:background .15s,color .15s;}" +
+      ".eqx-close:hover{background:#691280;color:#ffffff;}" +
+      "@media(max-width:520px){.eqx-card{gap:13px;padding:18px;}" +
+      ".eqx-logo{width:50px;height:50px;}.eqx-link{font-size:14px;}}";
     shadow.appendChild(style);
 
-    var pill = document.createElement("div");
-    pill.className = "eqx-pill";
+    var card = document.createElement("div");
+    card.className = "eqx-card";
+
+    var logo = document.createElement("img");
+    logo.className = "eqx-logo";
+    logo.src = apiBase + "/purple-giftbox.svg";
+    logo.alt = "";
 
     var link = document.createElement("a");
     link.className = "eqx-link";
@@ -168,7 +180,7 @@
     // Built with textContent, never innerHTML: nothing from the API is ever
     // interpreted as markup on a merchant's page.
     var lead = document.createElement("span");
-    lead.textContent = "You earned ";
+    lead.textContent = "Your order just earned you ";
     var strong = document.createElement("strong");
     // An amount that did not come back is left out rather than shown as a
     // phony "$0.00": a reward that is really zero would not be shown at all.
@@ -177,7 +189,7 @@
       ? "$" + amount + " of " + assetLabel(assetName)
       : assetLabel(assetName);
     var tail = document.createElement("span");
-    tail.textContent = ". Click to claim it.";
+    tail.textContent = "! Click here to grab your reward.";
     link.appendChild(lead);
     link.appendChild(strong);
     link.appendChild(tail);
@@ -191,9 +203,10 @@
       host.remove();
     });
 
-    pill.appendChild(link);
-    pill.appendChild(close);
-    shadow.appendChild(pill);
+    card.appendChild(logo);
+    card.appendChild(link);
+    card.appendChild(close);
+    shadow.appendChild(card);
     document.body.appendChild(host);
   }
 

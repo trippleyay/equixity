@@ -65,6 +65,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     return json({
       status: "delivered",
       transactionSignature: row.swap_transaction_signature,
+      claimMethod: row.claim_method,
+      customerWalletAddress: row.customer_wallet_address,
       ...display,
     });
   }
