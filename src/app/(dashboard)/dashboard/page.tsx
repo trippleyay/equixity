@@ -90,18 +90,13 @@ export default async function OverviewPage({
           <p className="mt-2 text-sm text-slate">No rewards issued yet.</p>
         ) : (
           <>
-            <div className="mt-4 grid grid-cols-2 divide-x divide-ink/10 rounded-xl bg-mist/50 px-2 py-4">
-              <div className="px-4 first:pl-4">
-                <div className="text-xs text-slate">Rewards</div>
-                <div className="mt-1 font-display text-3xl font-medium text-ink">
-                  {issued.length.toLocaleString()}
-                </div>
+            <div className="mt-4 flex items-baseline gap-3 rounded-xl bg-mist/50 px-4 py-4">
+              <div className="text-xs text-slate">Rewards</div>
+              <div className="font-display text-3xl font-medium text-ink">
+                {issued.length.toLocaleString()}
               </div>
-              <div className="px-4">
-                <div className="text-xs text-slate">Total value</div>
-                <div className="mt-1 font-display text-3xl font-medium text-ink">
-                  ${formatUsdcUnits(totalIssuedUsdc)}
-                </div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate">
+                Total value: ${formatUsdcUnits(totalIssuedUsdc)}
               </div>
             </div>
             <div className="mt-5 space-y-2">

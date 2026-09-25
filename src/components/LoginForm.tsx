@@ -216,12 +216,32 @@ export function LoginForm() {
             </p>
           )}
 
+          {busy ? (
+            <div
+              className="flex items-center justify-center gap-2 text-sm text-equixity-deepDark"
+              role="status"
+              aria-live="polite"
+            >
+              <span
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-equixity-deep/30 border-t-equixity-deep"
+                aria-hidden="true"
+              />
+              {mode === "signin" ? "Signing you in" : "Creating your account"}
+            </div>
+          ) : null}
+
           <button
             type="submit"
             disabled={busy || (mode === "signup" && !acceptedTerms)}
             className="w-full rounded-full bg-equixity-deep px-4 py-2.5 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+            {busy
+              ? mode === "signin"
+                ? "Signing in"
+                : "Creating account"
+              : mode === "signin"
+                ? "Sign in"
+                : "Create account"}
           </button>
         </form>
       </div>
