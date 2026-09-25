@@ -45,6 +45,10 @@ export default async function OverviewPage({
     ...totals,
     catalogAsset: catalog.find((item) => item.ticker === ticker),
   }));
+  const totalIssuedUsdc = issuedAssets.reduce(
+    (total, issuedAsset) => total + issuedAsset.usdcUnits,
+    0n,
+  );
   const params = await searchParams;
   const requestedPage = Number(params.page ?? "1");
   const totalPages = Math.max(1, Math.ceil(rewards.length / PAGE_SIZE));
@@ -82,33 +86,58 @@ export default async function OverviewPage({
 
       <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <h2 className="text-sm font-semibold text-ink">Total rewards issued</h2>
-        <div className="mt-3 font-display text-4xl font-medium text-ink">
-          {issued.length.toLocaleString()}
-        </div>
         {issuedAssets.length === 0 ? (
-          <p className="mt-1 text-sm text-slate">No rewards issued yet.</p>
+          <p className="mt-2 text-sm text-slate">No rewards issued yet.</p>
         ) : (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {issuedAssets.map((issuedAsset) => (
-              <div
-                key={issuedAsset.ticker}
-                className="flex items-center justify-between gap-4 rounded-xl bg-mist/60 px-4 py-3"
-              >
-                <div>
-                  <div className="font-medium text-ink">
-                    {formatBaseUnitsWithDecimals(issuedAsset.units, issuedAsset.decimals)}{" "}
-                    {issuedAsset.ticker}
-                  </div>
-                  <div className="text-xs text-slate">
-                    {issuedAsset.catalogAsset?.display_name ?? issuedAsset.ticker}
-                  </div>
-                </div>
-                <div className="whitespace-nowrap font-display text-lg font-medium text-ink">
-                  ${formatUsdcUnits(issuedAsset.usdcUnits)}
+          <>
+            <div className="mt-4 grid grid-cols-2 divide-x divide-ink/10 rounded-xl bg-mist/50 px-2 py-4">
+              <div className="px-4 first:pl-4">
+                <div className="text-xs text-slate">Rewards</div>
+                <div className="mt-1 font-display text-3xl font-medium text-ink">
+                  {issued.length.toLocaleString()}
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="px-4">
+                <div className="text-xs text-slate">Total value</div>
+                <div className="mt-1 font-display text-3xl font-medium text-ink">
+                  ${formatUsdcUnits(totalIssuedUsdc)}
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 space-y-2">
+              {issuedAssets.map((issuedAsset) => (
+                <div
+                  key={issuedAsset.ticker}
+                  className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-xl border border-ink/5 px-4 py-3"
+                >
+                  {issuedAsset.catalogAsset?.logo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={issuedAsset.catalogAsset.logo_url}
+                      alt=""
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 rounded-full"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded-full bg-mist" />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium text-ink">
+                      {issuedAsset.catalogAsset?.display_name ?? issuedAsset.ticker}
+                    </div>
+                    <div className="truncate text-xs text-slate">
+                      {formatBaseUnitsWithDecimals(issuedAsset.units, issuedAsset.decimals)}{" "}
+                      {issuedAsset.ticker}
+                    </div>
+                  </div>
+                  <div className="whitespace-nowrap font-display text-lg font-medium text-ink">
+                    ${formatUsdcUnits(issuedAsset.usdcUnits)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
 
@@ -125,8 +154,8 @@ export default async function OverviewPage({
                 <tr className="border-b border-ink/10 text-[11px] font-semibold uppercase tracking-wider text-slate">
                   <th className="pb-3 pr-4">Date</th>
                   <th className="pb-3 pr-4">Order amount</th>
-                  <th className="pb-3 pr-4">Reward asset</th>
-                  <th className="pb-3 pr-4">Reward amount</th>
+                  <th className="pb-3 pr-4">Asset</th>
+                  <th className="pb-3 pr-4">Amount</th>
                   <th className="pb-3">Status</th>
                 </tr>
               </thead>
@@ -146,7 +175,10 @@ export default async function OverviewPage({
                         : "Not available"}
                     </td>
                     <td className="py-3 pr-4 font-medium text-ink">
-                      {reward.reward_asset ?? settings.reward_asset}
+                      {catalog.find(
+                        (item) =>
+                          item.ticker === (reward.reward_asset ?? settings.reward_asset),
+                      )?.display_name ?? reward.reward_asset ?? settings.reward_asset}
                     </td>
                     <td className="py-3 pr-4 text-ink">
                       {formatBaseUnitsWithDecimals(
