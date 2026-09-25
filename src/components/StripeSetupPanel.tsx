@@ -1,3 +1,8 @@
+// Stripe setup follows the dashboard sequence shown in the current Stripe UI:
+// Developers -> Webhooks -> Add destination -> select events -> select
+// checkout.session.completed -> choose Webhook endpoint -> configure destination
+// with Your account, name, and endpoint URL -> Create destination -> copy secret.
+
 "use client";
 
 import { useState, type ReactNode } from "react";
@@ -195,24 +200,35 @@ export function StripeSetupPanel({
       <SetupProgress step={step} total={TOTAL_STEPS} />
 
       {step === 1 ? (
-        <SetupStep title="Add the Equixity web address in Stripe">
+        <SetupStep title="Create the Equixity destination in Stripe">
           <p className="mt-2 text-sm text-slate">
             In Stripe, open <Strong>Developers</Strong>, then{" "}
-            <Strong>Webhooks</Strong>, then <Strong>Add endpoint</Strong>. Paste
-            this web address as the endpoint URL:
+            <Strong>Webhooks</Strong>, then click <Strong>Add destination</Strong>.
+            Under <Strong>Select events</Strong>, open <Strong>Checkout</Strong> and
+            select <code className="text-xs">checkout.session.completed</code>.
+            Click <Strong>Continue</Strong>.
+          </p>
+          <p className="mt-3 text-sm text-slate">
+            Under <Strong>Choose destination type</Strong>, select{" "}
+            <Strong>Webhook endpoint</Strong>, then click <Strong>Continue</Strong>.
+            On the final screen, keep <Strong>Your account</Strong> selected, enter
+            any destination name, and paste this web address into{" "}
+            <Strong>Endpoint URL</Strong>:
           </p>
           <CodeField value={webhookUrl} label="Copy web address" />
+          <p className="mt-3 text-sm text-slate">
+            Click <Strong>Create destination</Strong>.
+          </p>
         </SetupStep>
       ) : null}
 
       {step === 2 ? (
-        <SetupStep title="Turn on the paid event, then paste the signing secret">
+        <SetupStep title="Copy and save the signing secret">
           <p className="mt-2 text-sm text-slate">
-            Under <Strong>Events</Strong>, select{" "}
-            <code className="text-xs">checkout.session.completed</code>, then
-            click <Strong>Add endpoint</Strong>. Stripe shows a signing secret
-            that starts with <code className="text-xs">whsec_</code>. Paste it
-            here:
+            After the destination is created, return to the destination page. In
+            <Strong>Destination details</Strong>, find <Strong>Signing secret</Strong>,
+            reveal or copy the value beginning with <code className="text-xs">whsec_</code>,
+            and paste it here:
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
