@@ -137,17 +137,18 @@
     host.style.cssText = [
       "position:fixed",
       "left:50%",
-      "top:50%",
-      "transform:translate(-50%,-50%)",
+      "bottom:20px",
+      "transform:translateX(-50%)",
       "width:min(560px,calc(100vw - 32px))",
       "z-index:2147483000",
+      "pointer-events:none",
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
     ].join(";");
 
     var shadow = host.attachShadow({ mode: "open" });
     var style = document.createElement("style");
     style.textContent =
-      ".eqx-card{display:flex;align-items:center;gap:18px;box-sizing:border-box;" +
+      ".eqx-card{display:flex;align-items:center;gap:18px;box-sizing:border-box;pointer-events:auto;" +
       "background:linear-gradient(135deg,rgba(255,255,255,0.96),rgba(239,227,247,0.92));" +
       "border:1px solid rgba(105,18,128,0.24);border-radius:18px;" +
       "box-shadow:0 24px 70px rgba(41,7,53,0.28),inset 0 1px 0 rgba(255,255,255,0.9);" +
@@ -160,6 +161,12 @@
       "background:rgba(105,18,128,0.09);color:#691280;font-size:20px;line-height:1;" +
       "cursor:pointer;transition:background .15s,color .15s;}" +
       ".eqx-close:hover{background:#691280;color:#ffffff;}" +
+      // The badge always sits along the bottom edge so it never covers the
+      // middle of the page. Desktop keeps it centred; a phone gets the full
+      // width. The host is the fixed element, so :host is the only way to move
+      // it from in here.
+      "@media(max-width:640px){:host{left:16px;right:16px;bottom:16px;" +
+      "transform:none;width:auto;}}" +
       "@media(max-width:520px){.eqx-card{gap:13px;padding:18px;}" +
       ".eqx-logo{width:50px;height:50px;}.eqx-link{font-size:14px;}}";
     shadow.appendChild(style);
