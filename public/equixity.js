@@ -134,20 +134,19 @@
     var host = document.createElement("div");
     host.id = "eqx-badge";
     host.setAttribute("role", "status");
+    // Position lives in the shadow stylesheet, never inline. An inline style
+    // outranks every author rule including :host, so a media query could not
+    // override these values and the badge stayed stuck in the middle.
     host.style.cssText = [
-      "position:fixed",
-      "left:50%",
-      "bottom:20px",
-      "transform:translateX(-50%)",
-      "width:min(560px,calc(100vw - 32px))",
       "z-index:2147483000",
-      "pointer-events:none",
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
     ].join(";");
 
     var shadow = host.attachShadow({ mode: "open" });
     var style = document.createElement("style");
     style.textContent =
+      ":host{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);" +
+      "width:min(560px,calc(100vw - 32px));pointer-events:none;}" +
       ".eqx-card{display:flex;align-items:center;gap:18px;box-sizing:border-box;pointer-events:auto;" +
       "background:linear-gradient(135deg,rgba(255,255,255,0.96),rgba(239,227,247,0.92));" +
       "border:1px solid rgba(105,18,128,0.24);border-radius:18px;" +

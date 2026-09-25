@@ -6,6 +6,7 @@ import {
   useLogin,
   useIdentityToken,
 } from "@privy-io/react-auth";
+import { useCreateWallet } from "@privy-io/react-auth/solana";
 
 /**
  * The hosted reward flow (reward-delivery spec sections 3a, 4).
@@ -93,6 +94,15 @@ export function RewardClaimPanel({
   onDelivered?: () => void;
 }) {
   const { ready, authenticated, getAccessToken } = usePrivy();
+  // Creating the embedded wallet is OURS to trigger, not something we hope the
+  // login modal did. Observed live: a signed-in customer got the server's
+  // "No wallet is linked to this account yet." (422) and the flow stopped, which
+  // defeats the entire point of the "Use Equixity" button. The provider is
+  // `embeddedWallets.solana.createOnLogin: "users-without-wallets"`, which only
+  // covers a brand new login; an account that already existed, or one where the
+  // wallet was never provisioned, ends up signed in with no address. So when the
+  // server reports that, we create one and resolve again.
+  const { createWallet } = useCreateWallet();
   // Privy writes the IDENTITY token to its store only on some app
   // configurations, and asking for one costs a rate-limited API call (see
   // resolveWallet below). Read it if it is already there, never chase it.
@@ -120,10 +130,14 @@ export function RewardClaimPanel({
   // rate-limited API.
   const getAccessTokenRef = useRef(getAccessToken);
   const identityTokenRef = useRef(identityToken);
+  // Same treatment for createWallet, so `resolveWallet` keeps a STABLE identity
+  // and the mount effect cannot turn into a retry storm.
+  const createWalletRef = useRef(createWallet);
   useEffect(() => {
     getAccessTokenRef.current = getAccessToken;
     identityTokenRef.current = identityToken;
-  }, [getAccessToken, identityToken]);
+    createWalletRef.current = createWallet;
+  }, [getAccessToken, identityToken, createWallet]);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +298,23 @@ export function RewardClaimPanel({
         await new Promise((r) =>
           setTimeout(r, result.status === 503 ? 2_000 : 900),
         );
+        result = await post(
+          await freshAccessToken(),
+          identityTokenRef.current ?? null,
+        );
+      }
+
+      // A signed-in customer with no wallet is the ONE status we can fix here,
+      // so we fix it rather than reporting it: create the embedded wallet, then
+      // resolve again exactly once. This is what makes "Use Equixity" work for
+      // someone who has never used crypto and has no wallet at all, which is the
+      // entire target user.
+      if (!result.ok && result.status === 422) {
+        try {
+          await createWalletRef.current();
+        } catch (e) {
+          console.warn("Embedded wallet creation failed:", (e as Error).message);
+        }
         result = await post(
           await freshAccessToken(),
           identityTokenRef.current ?? null,
