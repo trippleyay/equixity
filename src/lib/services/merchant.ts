@@ -260,6 +260,7 @@ export type RewardEventRow = {
   event_type: string;
   transaction_signature: string | null;
   purchase_amount_cents: string | null;
+  reward_usdc_units: string | null;
   reward_asset: string | null;
   reward_amount_units: string | null;
   status: string;
@@ -274,7 +275,7 @@ export async function listRewards(
   const { data } = await service
     .from("reward_events")
     .select(
-      "id, event_type, transaction_signature, purchase_amount_cents::text, reward_asset, reward_amount_units::text, status, created_at",
+      "id, event_type, transaction_signature, purchase_amount_cents::text, reward_usdc_units::text, reward_asset, reward_amount_units::text, status, created_at",
     )
     .eq("merchant_id", merchantId)
     .order("created_at", { ascending: false });
@@ -283,6 +284,7 @@ export async function listRewards(
     event_type: r.event_type,
     transaction_signature: r.transaction_signature,
     purchase_amount_cents: r.purchase_amount_cents,
+    reward_usdc_units: r.reward_usdc_units,
     reward_asset: r.reward_asset,
     reward_amount_units: r.reward_amount_units,
     status: r.status,

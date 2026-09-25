@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
 import {
   getBalance,
@@ -7,7 +8,13 @@ import {
 } from "@/lib/services/merchant";
 import { formatBaseUnitsWithDecimals, formatBps, formatUsdcUnits } from "@/lib/format";
 
-export default async function OverviewPage() {
+const PAGE_SIZE = 10;
+
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const { merchant } = await requireDashboardMerchant();
 
   const settings = await getSettings(merchant.id);
@@ -15,6 +22,36 @@ export default async function OverviewPage() {
   const rewards = await listRewards(merchant.id);
   const catalog = await listAssets();
   const asset = catalog.find((a) => a.ticker === settings.reward_asset);
+  const issued = rewards.filter(
+    (reward) => reward.status === "completed" || reward.status === "delivered",
+  );
+  const issuedByAsset = new Map<
+    string,
+    { units: bigint; usdcUnits: bigint; decimals: number }
+  >();
+  for (const reward of issued) {
+    const ticker = reward.reward_asset ?? settings.reward_asset;
+    const current = issuedByAsset.get(ticker) ?? {
+      units: 0n,
+      usdcUnits: 0n,
+      decimals: catalog.find((item) => item.ticker === ticker)?.decimals ?? settings.decimals,
+    };
+    current.units += BigInt(reward.reward_amount_units ?? "0");
+    current.usdcUnits += BigInt(reward.reward_usdc_units ?? "0");
+    issuedByAsset.set(ticker, current);
+  }
+  const issuedAssets = [...issuedByAsset.entries()].map(([ticker, totals]) => ({
+    ticker,
+    ...totals,
+    catalogAsset: catalog.find((item) => item.ticker === ticker),
+  }));
+  const params = await searchParams;
+  const requestedPage = Number(params.page ?? "1");
+  const totalPages = Math.max(1, Math.ceil(rewards.length / PAGE_SIZE));
+  const page = Number.isInteger(requestedPage)
+    ? Math.min(Math.max(requestedPage, 1), totalPages)
+    : 1;
+  const pageRewards = rewards.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -44,6 +81,38 @@ export default async function OverviewPage() {
       </div>
 
       <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
+        <h2 className="text-sm font-semibold text-ink">Total rewards issued</h2>
+        <div className="mt-3 font-display text-4xl font-medium text-ink">
+          {issued.length.toLocaleString()}
+        </div>
+        {issuedAssets.length === 0 ? (
+          <p className="mt-1 text-sm text-slate">No rewards issued yet.</p>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {issuedAssets.map((issuedAsset) => (
+              <div
+                key={issuedAsset.ticker}
+                className="flex items-center justify-between gap-4 rounded-xl bg-mist/60 px-4 py-3"
+              >
+                <div>
+                  <div className="font-medium text-ink">
+                    {formatBaseUnitsWithDecimals(issuedAsset.units, issuedAsset.decimals)}{" "}
+                    {issuedAsset.ticker}
+                  </div>
+                  <div className="text-xs text-slate">
+                    {issuedAsset.catalogAsset?.display_name ?? issuedAsset.ticker}
+                  </div>
+                </div>
+                <div className="whitespace-nowrap font-display text-lg font-medium text-ink">
+                  ${formatUsdcUnits(issuedAsset.usdcUnits)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
         <h2 className="text-sm font-semibold text-ink">Reward transactions</h2>
         {rewards.length === 0 ? (
           <p className="mt-2 text-sm text-slate">
@@ -62,7 +131,7 @@ export default async function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {rewards.map((reward) => (
+                {pageRewards.map((reward) => (
                   <tr key={reward.id} className="border-b border-ink/5 last:border-0">
                     <td className="py-3 pr-4 text-slate">
                       {new Date(reward.created_at).toLocaleDateString(undefined, {
@@ -82,7 +151,10 @@ export default async function OverviewPage() {
                     <td className="py-3 pr-4 text-ink">
                       {formatBaseUnitsWithDecimals(
                         reward.reward_amount_units ?? "0",
-                        settings.decimals,
+                        catalog.find(
+                          (item) =>
+                            item.ticker === (reward.reward_asset ?? settings.reward_asset),
+                        )?.decimals ?? settings.decimals,
                       )}{" "}
                       {reward.reward_asset ?? settings.reward_asset}
                     </td>
@@ -93,6 +165,28 @@ export default async function OverviewPage() {
                 ))}
               </tbody>
             </table>
+            {totalPages > 1 ? (
+              <nav className="mt-5 flex flex-wrap items-center justify-center gap-1.5" aria-label="Reward transaction pages">
+                <PageLink page={page - 1} disabled={page === 1} label="Previous" />
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map(
+                  (pageNumber) => (
+                    <Link
+                      key={pageNumber}
+                      href={pageNumber === 1 ? "/dashboard" : `/dashboard?page=${pageNumber}`}
+                      aria-current={pageNumber === page ? "page" : undefined}
+                      className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full px-2 text-xs font-medium transition ${
+                        pageNumber === page
+                          ? "bg-equixity-deep text-white"
+                          : "bg-mist/70 text-ink hover:bg-mist"
+                      }`}
+                    >
+                      {pageNumber}
+                    </Link>
+                  ),
+                )}
+                <PageLink page={page + 1} disabled={page === totalPages} label="Next" />
+              </nav>
+            ) : null}
           </div>
         )}
       </section>
@@ -108,19 +202,51 @@ function formatCents(cents: string): string {
   return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, "0")}`;
 }
 
+function PageLink({
+  page,
+  disabled,
+  label,
+}: {
+  page: number;
+  disabled: boolean;
+  label: string;
+}) {
+  const className = `inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition ${
+    disabled
+      ? "pointer-events-none bg-slate-100 text-slate-400"
+      : "bg-mist/70 text-ink hover:bg-mist"
+  }`;
+  if (disabled) {
+    return (
+      <span className={className} aria-disabled="true">
+        {label}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={page === 1 ? "/dashboard" : `/dashboard?page=${page}`}
+      className={className}
+    >
+      {label}
+    </Link>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const label: Record<string, string> = {
     pending: "Pending",
-    delivered: "Delivered",
+    completed: "Completed",
+    delivered: "Completed",
     failed: "Failed",
     rewards_disabled: "Rewards disabled",
   };
   const tone =
-    status === "delivered"
+    status === "completed" || status === "delivered"
       ? "bg-emerald-50 text-emerald-700"
       : status === "failed"
-        ? "bg-red-50 text-red-700"
-        : "bg-amber-50 text-amber-700";
+        ? "bg-slate-700 text-white"
+        : "bg-slate-100 text-slate-600";
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>
       {label[status] ?? status}
