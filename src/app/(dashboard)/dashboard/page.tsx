@@ -1,35 +1,20 @@
 import { requireDashboardMerchant } from "@/lib/auth/require-dashboard";
-import Link from "next/link";
 import {
   getBalance,
   getSettings,
+  listAssets,
   listRewards,
-  totalRewardsIssued,
 } from "@/lib/services/merchant";
 import { formatBaseUnitsWithDecimals, formatBps, formatUsdcUnits } from "@/lib/format";
-import { listAssets } from "@/lib/services/merchant";
-import { listClaimsForMerchant } from "@/lib/services/claims";
 
 export default async function OverviewPage() {
   const { merchant } = await requireDashboardMerchant();
 
   const settings = await getSettings(merchant.id);
   const balance = await getBalance(merchant.id);
-  const totals = await totalRewardsIssued(merchant.id);
   const rewards = await listRewards(merchant.id);
   const catalog = await listAssets();
   const asset = catalog.find((a) => a.ticker === settings.reward_asset);
-
-  // Needs-attention: only shows when something is actually wrong.
-  const now = Date.now();
-  const claims = await listClaimsForMerchant(merchant.id);
-  const attention = claims.filter((c) => {
-    if (c.status === "failed") return true;
-    if (c.status === "submitted" || c.status === "claiming") {
-      return now - new Date(c.created_at).getTime() > 15 * 60_000;
-    }
-    return false;
-  });
 
   return (
     <div>
@@ -58,68 +43,57 @@ export default async function OverviewPage() {
         />
       </div>
 
-      {/* Setup notices: only what actually blocks or matters to the merchant. */}
-      {attention.length > 0 && (
-        <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-soft">
-          <h2 className="text-sm font-semibold text-amber-900">
-            Claims needing attention ({attention.length})
-          </h2>
-          <ul className="mt-3 space-y-2 text-sm text-amber-900">
-            {attention.slice(0, 5).map((c) => (
-              <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
-                <span className="font-medium uppercase">{c.status}</span>
-                <span className="text-amber-800">
-                  {new Date(c.created_at).toLocaleString()}
-                </span>
-                {c.failure_reason && (
-                  <span className="text-amber-800">- {c.failure_reason}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-          {attention.length > 5 && (
-            <p className="mt-2 text-xs text-amber-800">
-              And {attention.length - 5} more. Stuck claims reconcile on the
-              Funding page; failed claims have refunded the balance.
-            </p>
-          )}
-        </section>
-      )}
-
-      {!settings.confirmed_customer_eligibility && (
-        <Notice>
-          Eligibility is not confirmed, so rewards cannot be distributed.{" "}
-          <Link
-            href="/rewards"
-            className="font-semibold underline underline-offset-2 hover:opacity-80"
-          >
-            Go to Rewards to confirm
-          </Link>
-          .
-        </Notice>
-      )}
-
       <section className="mt-6 rounded-2xl border border-ink/5 bg-white p-5 shadow-soft">
-        <h2 className="text-sm font-semibold text-ink">
-          Total rewards issued
-        </h2>
-        <div className="mt-3 flex items-baseline gap-2">
-          <span className="font-display text-3xl font-medium text-ink">
-            {totals.count}
-          </span>
-          <span className="text-sm text-slate">
-            {formatBaseUnitsWithDecimals(totals.reward_amount_units, settings.decimals)}{" "}
-            {settings.reward_asset}
-          </span>
-        </div>
+        <h2 className="text-sm font-semibold text-ink">Reward transactions</h2>
         {rewards.length === 0 ? (
           <p className="mt-2 text-sm text-slate">
             No rewards issued yet. Rewards appear here once a customer earns one.
           </p>
         ) : (
-          <p className="mt-2 text-sm text-slate">
-            Aggregated from reward_events (not a stored counter).
-          </p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-ink/10 text-[11px] font-semibold uppercase tracking-wider text-slate">
+                  <th className="pb-3 pr-4">Date</th>
+                  <th className="pb-3 pr-4">Order amount</th>
+                  <th className="pb-3 pr-4">Reward asset</th>
+                  <th className="pb-3 pr-4">Reward amount</th>
+                  <th className="pb-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rewards.map((reward) => (
+                  <tr key={reward.id} className="border-b border-ink/5 last:border-0">
+                    <td className="py-3 pr-4 text-slate">
+                      {new Date(reward.created_at).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </td>
+                    <td className="py-3 pr-4 text-ink">
+                      {reward.purchase_amount_cents !== null
+                        ? `$${formatCents(reward.purchase_amount_cents)}`
+                        : "Not available"}
+                    </td>
+                    <td className="py-3 pr-4 font-medium text-ink">
+                      {reward.reward_asset ?? settings.reward_asset}
+                    </td>
+                    <td className="py-3 pr-4 text-ink">
+                      {formatBaseUnitsWithDecimals(
+                        reward.reward_amount_units ?? "0",
+                        settings.decimals,
+                      )}{" "}
+                      {reward.reward_asset ?? settings.reward_asset}
+                    </td>
+                    <td className="py-3">
+                      <StatusBadge status={reward.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
@@ -127,11 +101,30 @@ export default async function OverviewPage() {
   );
 }
 
-function Notice({ children }: { children: React.ReactNode }) {
+function formatCents(cents: string): string {
+  const value = BigInt(cents);
+  const sign = value < 0n ? "-" : "";
+  const abs = value < 0n ? -value : value;
+  return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, "0")}`;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const label: Record<string, string> = {
+    pending: "Pending",
+    delivered: "Delivered",
+    failed: "Failed",
+    rewards_disabled: "Rewards disabled",
+  };
+  const tone =
+    status === "delivered"
+      ? "bg-emerald-50 text-emerald-700"
+      : status === "failed"
+        ? "bg-red-50 text-red-700"
+        : "bg-amber-50 text-amber-700";
   return (
-    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      {children}
-    </div>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>
+      {label[status] ?? status}
+    </span>
   );
 }
 

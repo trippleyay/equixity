@@ -279,6 +279,11 @@ export function FlutterwaveSetupPanel({
             the snippet once:
           </p>
           <SuccessPageSnippet snippet={snippet} />
+          <p className="mt-4 text-sm text-slate">
+            If you use a site builder (Wix, Squarespace, WordPress...), paste it into
+            its custom-code section. Any placement works. If you use your own code,
+            add the snippet within the code body of your success page.
+          </p>
         </SetupStep>
       ) : null}
 

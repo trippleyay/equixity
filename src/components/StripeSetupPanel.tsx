@@ -16,10 +16,10 @@ import {
 } from "@/components/SetupGuide";
 
 /**
- * Stripe tab of Settings → Configuration: four steps, each a single paste or a
+ * Stripe tab of Settings → Configuration: five steps, each a single paste or a
  * single click in Stripe, and the shared success-page snippet last.
  *
- * Step 2 stores the signing secret, which is what makes the webhook verifiable,
+ * Step 3 stores the signing secret, which is what makes the webhook verifiable,
  * so Next cannot be walked past without it. Done on the last step is the
  * merchant's explicit finish: it records the finish server-side (never from
  * local state), refuses if nothing was stored, and only then does the tab chip
@@ -27,10 +27,10 @@ import {
  *
  * Nothing here is one-time. Saving is an upsert on (merchant, provider), so the
  * guide can be re-run whenever something changes on the Stripe side: paste a new
- * secret in step 2, or remove the stored secret to start the path over.
+ * secret in step 3, or remove the stored secret to start the path over.
  */
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 const SESSION_ID = "?session_id={CHECKOUT_SESSION_ID}";
 const SESSION_ID_APPEND = "&session_id={CHECKOUT_SESSION_ID}";
 
@@ -76,7 +76,9 @@ export function StripeSetupPanel({
         error?: string;
       };
       if (!res.ok) {
-        setError(body.error ?? "Could not save the signing secret. Please try again.");
+        setError(
+          body.error ?? "Could not save the signing secret. Please try again.",
+        );
         return;
       }
       setConfigured(true);
@@ -155,7 +157,8 @@ export function StripeSetupPanel({
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setError(
-          body.error ?? "Could not remove the signing secret. Please try again.",
+          body.error ??
+            "Could not remove the signing secret. Please try again.",
         );
         return;
       }
@@ -181,7 +184,8 @@ export function StripeSetupPanel({
           </p>
         </div>
         <p className="mt-3 text-xs leading-5 text-slate">
-          Keep this snippet on the page Stripe sends customers to after they pay:
+          Keep this snippet on the page Stripe sends customers to after they
+          pay:
         </p>
         <SuccessPageSnippet snippet={snippet} />
         <SetupActions
@@ -200,35 +204,36 @@ export function StripeSetupPanel({
       <SetupProgress step={step} total={TOTAL_STEPS} />
 
       {step === 1 ? (
-        <SetupStep title="Create the Equixity destination in Stripe">
+        <SetupStep title="Create an event destination">
           <p className="mt-2 text-sm text-slate">
             In Stripe, open <Strong>Developers</Strong>, then{" "}
-            <Strong>Webhooks</Strong>, then click <Strong>Add destination</Strong>.
-            Under <Strong>Select events</Strong>, open <Strong>Checkout</Strong> and
-            select <code className="text-xs">checkout.session.completed</code>.
-            Click <Strong>Continue</Strong>.
-          </p>
-          <p className="mt-3 text-sm text-slate">
-            Under <Strong>Choose destination type</Strong>, select{" "}
-            <Strong>Webhook endpoint</Strong>, then click <Strong>Continue</Strong>.
-            On the final screen, keep <Strong>Your account</Strong> selected, enter
-            any destination name, and paste this web address into{" "}
-            <Strong>Endpoint URL</Strong>:
-          </p>
-          <CodeField value={webhookUrl} label="Copy web address" />
-          <p className="mt-3 text-sm text-slate">
-            Click <Strong>Create destination</Strong>.
+            <Strong>Webhooks</Strong>, then click{" "}
+            <Strong>Add destination</Strong>. On the event destination page,
+            select <Strong>Your account</Strong>, scroll down, click{" "}
+            <Strong>Checkout</Strong>, select{" "}
+            <code className="text-xs">checkout.session.completed</code>, and
+            click <Strong>Continue</Strong>.
           </p>
         </SetupStep>
       ) : null}
 
       {step === 2 ? (
-        <SetupStep title="Copy and save the signing secret">
+        <SetupStep title="Configure and choose the destination type">
           <p className="mt-2 text-sm text-slate">
-            After the destination is created, return to the destination page. In
-            <Strong>Destination details</Strong>, find <Strong>Signing secret</Strong>,
-            reveal or copy the value beginning with <code className="text-xs">whsec_</code>,
-            and paste it here:
+            Select <Strong>Webhook endpoint</Strong>, then click{" "}
+            <Strong>Continue</Strong>. On the Configure destination page, enter
+            any destination name and paste this web address into the endpoint
+            URL, then click <Strong>Continue</Strong>:
+          </p>
+          <CodeField value={webhookUrl} label="Copy web address" />
+        </SetupStep>
+      ) : null}
+
+      {step === 3 ? (
+        <SetupStep title="Save the signing secret">
+          <p className="mt-2 text-sm text-slate">
+            Your webhook event is now set up. Copy the signing secret and paste
+            it here:
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
@@ -246,7 +251,11 @@ export function StripeSetupPanel({
               disabled={busy || secret.trim() === ""}
               className="shrink-0 rounded-full bg-equixity px-4 py-2 text-sm font-medium text-white transition hover:bg-equixity-deepDark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {busy ? "Saving..." : configured ? "Replace secret" : "Save secret"}
+              {busy
+                ? "Saving..."
+                : configured
+                  ? "Replace secret"
+                  : "Save secret"}
             </button>
           </div>
           {configured ? (
@@ -269,34 +278,52 @@ export function StripeSetupPanel({
         </SetupStep>
       ) : null}
 
-      {step === 3 ? (
+      {step === 4 ? (
         <SetupStep title="Send paying customers back to your page">
           <p className="mt-2 text-sm text-slate">
-            In Stripe, open the payment link or checkout you use and set the
-            address customers return to after paying. It has to end with:
+            Equixity matches each reward to a payment using the Stripe session
+            ID. There are two ways to set this up.
           </p>
-          <CodeField value={SESSION_ID} />
+          <p className="mt-4 text-sm font-medium text-ink">
+            If your site uses a Stripe Payment Link:
+          </p>
+          <p className="mt-2 text-sm text-slate">
+            In the Stripe Dashboard, open <Strong>Payment Links</Strong> and
+            select your link. Under <Strong>After payment</Strong>, turn on{" "}
+            <Strong>Redirect customers to your website</Strong>, then enter your
+            thank-you page address with the template appended:
+          </p>
+          <CodeField value={`https://your-site.com/thank-you${SESSION_ID}`} />
+          <p className="mt-4 text-sm font-medium text-ink">
+            If your site uses the Stripe API:
+          </p>
+          <p className="mt-2 text-sm text-slate">
+            Check the <code className="text-xs">success_url</code> in your{" "}
+            <code className="text-xs">checkout.sessions.create</code> call. If
+            it already ends with <code className="text-xs">{SESSION_ID}</code>,
+            you do not need to change anything and can continue to the next
+            step.
+          </p>
           <p className="mt-3 text-sm text-slate">
-            Already ends like that? Change nothing.
+            If it does not, append <code className="text-xs">{SESSION_ID}</code>{" "}
+            to it. If your address already has a{" "}
+            <code className="text-xs">?</code> in it, use{" "}
+            <code className="text-xs">{SESSION_ID_APPEND}</code> instead.
           </p>
-          <p className="mt-3 text-sm text-slate">
-            Only if that address already contains a question mark, use this
-            instead:
-          </p>
-          <CodeField value={SESSION_ID_APPEND} />
         </SetupStep>
       ) : null}
 
-      {step === 4 ? (
+      {step === 5 ? (
         <SetupStep title="Paste the snippet on your thank-you page">
           <p className="mt-2 text-sm text-slate">
-            This is the page Stripe sends customers to after they pay. Paste the
-            snippet once:
+            Paste this on the page customers land on after paying, the same page
+            from the previous step, the one with the session ID in the URL:
           </p>
           <SuccessPageSnippet snippet={snippet} />
-          <p className="mt-4 text-xs leading-5 text-slate">
-            Only USD charges create a reward. Any other currency is refused
-            instead of converted.
+          <p className="mt-4 text-sm text-slate">
+            If you use a site builder (Wix, Squarespace, WordPress...), paste it
+            into its custom-code section. Any placement works. If you use your
+            own code, add the snippet within the code body of your success page.
           </p>
         </SetupStep>
       ) : null}
@@ -311,7 +338,7 @@ export function StripeSetupPanel({
         onBack={step > 1 ? () => setStep((s) => s - 1) : undefined}
         onNext={step === TOTAL_STEPS ? done : () => setStep((s) => s + 1)}
         nextLabel={step === TOTAL_STEPS ? "Done" : "Next"}
-        nextDisabled={step === 2 && !configured}
+        nextDisabled={step === 3 && !configured}
         nextBusy={finishing}
       />
     </div>
