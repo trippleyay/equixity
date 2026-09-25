@@ -113,6 +113,7 @@ export type StaleClaimRow = {
   asset_mint: string | null;
   asset_decimals: number | null;
   customer_wallet_address: string | null;
+  updated_at: string;
 };
 
 /**
@@ -141,6 +142,7 @@ export async function listStaleClaimingClaims(): Promise<StaleClaimRow[]> {
       reward_event_id: string;
       swap_transaction_signature: string | null;
       customer_wallet_address: string | null;
+      updated_at: string;
       reward_events: EmbeddedEvent | EmbeddedEvent[] | null;
     };
     const event = first(row.reward_events);
@@ -155,6 +157,7 @@ export async function listStaleClaimingClaims(): Promise<StaleClaimRow[]> {
       asset_mint: asset?.mint_address ?? null,
       asset_decimals: asset?.decimals ?? null,
       customer_wallet_address: row.customer_wallet_address ?? null,
+      updated_at: row.updated_at,
     };
   });
 }

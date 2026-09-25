@@ -159,10 +159,11 @@ const DELIVERY_CONFIRM_BUDGET_MS = 14_000;
 async function waitForOutcome(
   signature: string,
   budgetMs: number,
+  blockhash?: string | null,
 ): Promise<"confirmed" | "notlanded" | "indeterminate"> {
   const deadline = Date.now() + budgetMs;
   for (;;) {
-    const verdict = await resolveOutcome(signature, null);
+    const verdict = await resolveOutcome(signature, blockhash ?? null);
     if (verdict !== "indeterminate") return verdict;
     if (Date.now() >= deadline) return "indeterminate";
     await new Promise((r) => setTimeout(r, CONFIRM_POLL_MS));
@@ -326,6 +327,7 @@ export async function executeRewardClaim(params: {
 
   // --- 3. Quote, build, sign and submit the swap leg -----------------------
   let swapSignature: string;
+  let swapBlockhash: string | null = null;
 
   try {
     const quote = await quoteUsdcToAsset({
@@ -362,6 +364,7 @@ export async function executeRewardClaim(params: {
     );
 
     const latest = await conn.getLatestBlockhash();
+    swapBlockhash = latest.blockhash;
 
     // The Equixity fee payer is the transaction fee payer, so the merchant's
     // deposit key never pays a network fee (spec section 6 step 5). This is
@@ -422,7 +425,11 @@ export async function executeRewardClaim(params: {
   await recordSwapSignature(claimId, swapSignature);
 
   // --- 4. Confirm the swap leg, inside a bounded budget --------------------
-  const swapVerdict = await waitForOutcome(swapSignature, SWAP_CONFIRM_BUDGET_MS);
+  const swapVerdict = await waitForOutcome(
+    swapSignature,
+    SWAP_CONFIRM_BUDGET_MS,
+    swapBlockhash,
+  );
   if (swapVerdict === "notlanded") {
     // The chain tells two realities apart: a signature that exists WITH an
     // error executed and failed, a signature that does not exist never executed
@@ -549,6 +556,7 @@ export async function deliverRewardAsset(params: {
   }
 
   let transferSignature: string;
+  let deliveryBlockhash: string | null = null;
   try {
     // Reward assets are Token-2022, so the transfer and the customer's ATA must
     // both be built with TOKEN_2022_PROGRAM_ID. A legacy-program instruction
@@ -575,6 +583,7 @@ export async function deliverRewardAsset(params: {
       );
 
     const latest = await conn.getLatestBlockhash();
+    deliveryBlockhash = latest.blockhash;
     const tx = new Transaction();
     tx.feePayer = feePayer.publicKey;
     tx.recentBlockhash = latest.blockhash;
@@ -620,6 +629,7 @@ export async function deliverRewardAsset(params: {
   const verdict = await waitForOutcome(
     transferSignature,
     DELIVERY_CONFIRM_BUDGET_MS,
+    deliveryBlockhash,
   );
   if (verdict === "confirmed") {
     await completeClaim(params.claimId, transferSignature);

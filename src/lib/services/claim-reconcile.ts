@@ -56,7 +56,13 @@ export async function reconcileClaims(): Promise<number> {
     }
 
     const verdict = await resolveOutcome(sig, null);
-    if (verdict === "notlanded") {
+    const ageMs = Date.now() - new Date(row.updated_at).getTime();
+    // A Solana blockhash expires in 151 slots (~60-90s). Any unconfirmed transaction
+    // with no on-chain trace after 90 seconds will definitively never land.
+    const isDefinitivelyDead =
+      verdict === "notlanded" || (verdict === "indeterminate" && ageMs > 90_000);
+
+    if (isDefinitivelyDead) {
       // The swap never executed, so the USDC never left: refund exactly once.
       if (row.merchant_id) {
         await failClaimReconcile(
@@ -71,7 +77,7 @@ export async function reconcileClaims(): Promise<number> {
       const settled = await finishDelivery(row, sig);
       if (settled) reconciled += 1;
     }
-    // 'indeterminate' -> leave it in 'claiming' and try again on a later view.
+    // 'indeterminate' and <= 90s -> leave it in 'claiming' and try again on a later view.
   }
 
   return reconciled;

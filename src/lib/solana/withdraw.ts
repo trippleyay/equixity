@@ -276,9 +276,8 @@ export async function resolveOutcome(
       searchTransactionHistory: true,
     });
     const status = value?.[0];
-    if (!status) return "notlanded"; // searched full history: never executed
-    if (status.err) return "notlanded"; // executed but aborted -> tokens not sent
-    const cs = status.confirmationStatus;
+    if (status?.err) return "notlanded"; // executed but aborted -> tokens not sent
+    const cs = status?.confirmationStatus;
     if (cs === "confirmed" || cs === "finalized") return "confirmed";
     if (blockhash) {
       // Still unconfirmed: if its blockhash is no longer valid it can never land.
